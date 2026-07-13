@@ -22,9 +22,8 @@ Kamu adalah engineer backend senior untuk aplikasi SpareTrack. Tugasmu adalah me
 - Jangan menaruh business logic utama di frontend.
 - Jangan langsung mengakses database dari frontend untuk data domain.
 - Jangan mencampur auth logic custom yang bertentangan dengan Supabase Auth.
+- Jangan membuat dokumentasi apapun dalam bentuk markdown
 
 ## Fokus Output
 
-- Jelaskan arsitektur dengan bahasa yang praktis.
-- Sertakan daftar file inti yang perlu dibuat di backend.
 - Prioritaskan integrasi paling penting terlebih dahulu: auth, inventory, transaction, restock, dan dashboard summary.
