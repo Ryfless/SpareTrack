@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Package, ShoppingCart, Building2, ArrowLeftRight,
   FileBarChart, Settings, Bell, Search, Menu, X, Sun, Moon, Shield,
-  ChevronRight, BarChart3, User, LogOut,
+  ChevronRight, BarChart3, User, LogOut, Loader2,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
 import { BRANCHES } from "./data";
 import { ROLE_CFG, NAV_SECTIONS, PAGE_TITLES } from "./config";
+import { supabase } from "./services/supabase";
+import { getMe, logout as logoutApi } from "./services/auth";
 import { AddItemModal } from "./components/modals/AddItemModal";
 import { StokMasukModal } from "./components/modals/StokMasukModal";
 import { StokKeluarModal } from "./components/modals/StokKeluarModal";
@@ -29,8 +31,17 @@ import { ReportsPage } from "./pages/app/ReportsPage";
 import { SettingsPage } from "./pages/app/SettingsPage";
 import type { AppState, PageId, Role } from "./types";
 
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  phone: string;
+  branch: string;
+  role: Role;
+}
+
 export default function App() {
-  const [appState, setAppState] = useState<AppState>("landing");
+  const [appState, setAppState] = useState<AppState>("loading");
   const [page, setPage] = useState<PageId>("dashboard");
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("all");
@@ -42,6 +53,8 @@ export default function App() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [currentRole, setCurrentRole] = useState<Role>("super_admin");
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [otpEmail, setOtpEmail] = useState("");
 
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [stokMasukOpen, setStokMasukOpen] = useState(false);
@@ -49,11 +62,36 @@ export default function App() {
   const [transferOpen, setTransferOpen] = useState(false);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setCmdOpen(true); } };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        fetchProfile();
+      } else {
+        setAppState("landing");
+      }
+    });
+  }, []);
+
+  async function fetchProfile() {
+    try {
+      const result = await getMe();
+      const profile = result.profile;
+      if (profile) {
+        setUserProfile(profile);
+        setCurrentRole(profile.role);
+      }
+      setAppState("app");
+    } catch {
+      setAppState("landing");
+    }
+  }
 
   function navigate(p: PageId, filter?: string) {
     setPage(p); setSelectedPart(null); setSidebarOpen(false);
@@ -69,12 +107,31 @@ export default function App() {
     else toast.info("Fitur ini belum tersedia pada mode demo");
   }
 
+  async function handleLogout() {
+    try {
+      await logoutApi();
+      setUserProfile(null);
+      setAppState("landing");
+      toast.success("Sesi berakhir.");
+    } catch {
+      toast.error("Gagal logout");
+    }
+  }
+
+  if (appState === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 size={32} className="animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   // Auth screens
   if (appState === "landing")  return <LandingPage onLogin={() => setAppState("login")} />;
-  if (appState === "login")    return <LoginPage onSuccess={() => setAppState("app")} onRegister={() => setAppState("register")} onForgot={() => setAppState("forgot")} />;
+  if (appState === "login")    return <LoginPage onSuccess={() => { fetchProfile(); }} onRegister={() => setAppState("register")} onForgot={() => setAppState("forgot")} />;
   if (appState === "register") return <RegisterPage onLogin={() => setAppState("login")} />;
-  if (appState === "forgot")   return <ForgotPage onOTP={() => setAppState("otp")} onLogin={() => setAppState("login")} />;
-  if (appState === "otp")      return <OTPPage onSuccess={() => setAppState("app")} onBack={() => setAppState("forgot")} />;
+  if (appState === "forgot")   return <ForgotPage onOTP={(email) => { setOtpEmail(email); setAppState("otp"); }} onLogin={() => setAppState("login")} />;
+  if (appState === "otp")      return <OTPPage email={otpEmail} onSuccess={() => fetchProfile()} onBack={() => setAppState("forgot")} />;
 
   const allowedPages = ROLE_CFG[currentRole].pages;
 
@@ -138,8 +195,8 @@ export default function App() {
             onMouseEnter={e => (e.currentTarget.style.background="rgba(255,255,255,0.07)")}
             onMouseLeave={e => (e.currentTarget.style.background="rgba(255,255,255,0.04)")}
           >
-            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">A</div>
-            <div className="min-w-0 flex-1 text-left"><div className="text-xs font-medium text-white truncate">Admin Pusat</div><div className="text-xs truncate" style={{ color:"#6880b8" }}>admin@sparetrack.id</div></div>
+            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">{userProfile?.full_name?.charAt(0) || "A"}</div>
+            <div className="min-w-0 flex-1 text-left"><div className="text-xs font-medium text-white truncate">{userProfile?.full_name || "Admin"}</div><div className="text-xs truncate" style={{ color:"#6880b8" }}>{userProfile?.email || "user@sparetrack.id"}</div></div>
             <ChevronRight size={12} style={{ color:"#6880b8" }} />
           </button>
         </div>
@@ -213,8 +270,8 @@ export default function App() {
                   <div className="fixed inset-0 z-40" onClick={() => setProfileDropOpen(false)} />
                   <div className="absolute right-0 top-full mt-2 w-52 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden p-1">
                     <div className="px-3 py-2.5 mb-0.5">
-                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">Admin Pusat</div>
-                      <div className="text-xs text-slate-400">admin@sparetrack.id</div>
+                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">{userProfile?.full_name || "Admin"}</div>
+                      <div className="text-xs text-slate-400">{userProfile?.email || "user@sparetrack.id"}</div>
                       <div className="mt-1"><span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_CFG[currentRole].cls}`}>{ROLE_CFG[currentRole].label}</span></div>
                     </div>
                     <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
@@ -226,7 +283,7 @@ export default function App() {
                       <button key={item.label} onClick={item.fn} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition"><item.icon size={13} className="text-slate-400" />{item.label}</button>
                     ))}
                     <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
-                    <button onClick={() => { toast.error("Sesi berakhir."); setTimeout(() => setAppState("landing"), 500); setProfileDropOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"><LogOut size={13} />Keluar</button>
+                    <button onClick={() => { handleLogout(); setProfileDropOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"><LogOut size={13} />Keluar</button>
                   </div>
                 </>
               )}

@@ -4,11 +4,28 @@ import { toast } from "sonner";
 import { FormField } from "../../components/shared/FormField";
 import { BRANCHES_LIST } from "../../data";
 import { inputCls } from "../../config";
+import { register as registerApi } from "../../services/auth";
 
 export function RegisterPage({ onLogin }: { onLogin: () => void }) {
   const [form, setForm] = useState({ nama: "", email: "", hp: "", pass: "", confirm: "", cabang: "", agree: false });
   const [loading, setLoading] = useState(false);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: (e.target as HTMLInputElement).type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value }));
+  async function handleRegister() {
+    if (!form.nama || !form.email || !form.pass) { toast.error("Lengkapi data wajib"); return; }
+    if (form.pass !== form.confirm) { toast.error("Konfirmasi password tidak cocok"); return; }
+    if (!form.agree) { toast.error("Setujui syarat dan ketentuan"); return; }
+    setLoading(true);
+    try {
+      await registerApi({ email: form.email, password: form.pass, fullName: form.nama, phone: form.hp, branch: form.cabang });
+      toast.success("Akun berhasil dibuat! Silakan login.");
+      onLogin();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Registrasi gagal";
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
@@ -28,7 +45,7 @@ export function RegisterPage({ onLogin }: { onLogin: () => void }) {
               <FormField label="Konfirmasi" required><input value={form.confirm} onChange={set("confirm")} type="password" placeholder="••••••••" className={inputCls} /></FormField>
             </div>
             <label className="flex items-start gap-2 cursor-pointer"><input type="checkbox" checked={form.agree} onChange={set("agree")} className="mt-0.5 rounded" /><span className="text-xs text-slate-600 dark:text-slate-400">Saya menyetujui <span className="text-blue-600">Syarat &amp; Ketentuan</span> dan <span className="text-blue-600">Kebijakan Privasi</span></span></label>
-            <button onClick={() => { if (!form.nama || !form.email || !form.pass) { toast.error("Lengkapi data wajib"); return; } if (form.pass !== form.confirm) { toast.error("Konfirmasi password tidak cocok"); return; } if (!form.agree) { toast.error("Setujui syarat dan ketentuan"); return; } setLoading(true); setTimeout(() => { setLoading(false); toast.success("Akun berhasil dibuat!"); onLogin(); }, 1000); }} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70">
+            <button onClick={handleRegister} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70">
               {loading ? <><Loader2 size={15} className="animate-spin" />Mendaftar...</> : "Buat Akun"}
             </button>
           </div>

@@ -1,8 +1,46 @@
 import { useState } from "react";
-import { BarChart3, Mail, Lock, Eye, Loader2, Globe } from "lucide-react";
+import { BarChart3, Mail, Lock, Eye, Loader2, Globe, AlertTriangle, AlertCircle, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { FormField } from "../../components/shared/FormField";
 import { inputCls } from "../../config";
+import { login as loginApi, signInWithGoogle } from "../../services/auth";
+
+function getLoginError(err: unknown): { title: string; message: string; type: "invalid" | "config" | "network" } {
+  const msg = err instanceof Error ? err.message : "";
+  if (msg.includes("Invalid API key") || msg.includes("API key")) {
+    return {
+      title: "Konfigurasi Aplikasi Bermasalah",
+      message: "Koneksi ke server autentikasi gagal. Silakan hubungi administrator.",
+      type: "config",
+    };
+  }
+  if (msg.includes("Invalid login credentials")) {
+    return {
+      title: "Email atau Password Salah",
+      message: "Periksa kembali email dan password yang Anda masukkan.",
+      type: "invalid",
+    };
+  }
+  if (msg.includes("Email not confirmed") || msg.includes("not confirmed")) {
+    return {
+      title: "Email Belum Diverifikasi",
+      message: "Silakan periksa email Anda dan konfirmasi pendaftaran terlebih dahulu.",
+      type: "invalid",
+    };
+  }
+  if (msg.includes("fetch") || msg.includes("NetworkError") || msg.includes("Failed to fetch")) {
+    return {
+      title: "Koneksi Gagal",
+      message: "Tidak dapat terhubung ke server. Periksa koneksi internet Anda.",
+      type: "network",
+    };
+  }
+  return {
+    title: "Login Gagal",
+    message: msg || "Terjadi kesalahan yang tidak diketahui. Silakan coba lagi.",
+    type: "invalid",
+  };
+}
 
 export function LoginPage({ onSuccess, onRegister, onForgot }: { onSuccess: () => void; onRegister: () => void; onForgot: () => void }) {
   const [email, setEmail] = useState("admin@sparetrack.id");
@@ -10,9 +48,22 @@ export function LoginPage({ onSuccess, onRegister, onForgot }: { onSuccess: () =
   const [showPass, setShowPass] = useState(false);
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
-  function login() {
+  const [error, setError] = useState<ReturnType<typeof getLoginError> | null>(null);
+  async function login() {
+    setError(null);
     if (!email || !password) { toast.error("Email dan password wajib diisi"); return; }
-    setLoading(true); setTimeout(() => { setLoading(false); onSuccess(); }, 1200);
+    setLoading(true);
+    try {
+      await loginApi(email, password);
+      toast.success("Login berhasil");
+      onSuccess();
+    } catch (err: unknown) {
+      const e = getLoginError(err);
+      setError(e);
+      toast.error(e.title);
+    } finally {
+      setLoading(false);
+    }
   }
   return (
     <div className="min-h-screen grid md:grid-cols-2">
@@ -49,14 +100,31 @@ export function LoginPage({ onSuccess, onRegister, onForgot }: { onSuccess: () =
               <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} className="rounded" /><span className="text-slate-600 dark:text-slate-400">Ingat saya</span></label>
               <button onClick={onForgot} className="text-blue-600 hover:underline text-xs">Lupa password?</button>
             </div>
+            {error && (
+              <div className={`p-3 rounded-xl border text-sm flex items-start gap-3 ${
+                error.type === "config"
+                  ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                  : error.type === "network"
+                  ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                  : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+              }`}>
+                {error.type === "network"
+                  ? <WifiOff size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                  : <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
+                }
+                <div>
+                  <p className="font-semibold text-slate-800 dark:text-slate-200">{error.title}</p>
+                  <p className="text-slate-600 dark:text-slate-400 mt-0.5">{error.message}</p>
+                </div>
+              </div>
+            )}
             <button onClick={login} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70">
               {loading ? <><Loader2 size={15} className="animate-spin" />Masuk...</> : "Masuk ke Dashboard"}
             </button>
             <div className="relative my-2"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700" /></div><div className="relative flex justify-center"><span className="px-2 bg-slate-50 dark:bg-slate-950 text-xs text-slate-400">atau</span></div></div>
-            <button onClick={() => toast.info("Google OAuth belum diaktifkan pada mode demo")} className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 active:scale-95 rounded-xl transition-all"><Globe size={15} className="text-slate-500" />Lanjutkan dengan Google</button>
+            <button onClick={async () => { try { await signInWithGoogle(); } catch { toast.error("Google OAuth gagal"); } }} className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 active:scale-95 rounded-xl transition-all"><Globe size={15} className="text-slate-500" />Lanjutkan dengan Google</button>
           </div>
           <p className="text-center text-sm text-slate-500 mt-5">Belum punya akun? <button onClick={onRegister} className="text-blue-600 font-medium hover:underline">Daftar sekarang</button></p>
-          <div className="mt-5 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-center text-xs text-blue-700 dark:text-blue-400"><strong>Demo:</strong> Klik Masuk untuk langsung masuk ke dashboard</div>
         </div>
       </div>
     </div>

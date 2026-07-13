@@ -1,12 +1,66 @@
 import { useState, useEffect, useRef } from "react";
-import { Mail } from "lucide-react";
+import { Mail, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { verifyOtp, requestOtp } from "../../services/auth";
 
-export function OTPPage({ onSuccess, onBack }: { onSuccess: () => void; onBack: () => void }) {
+export function OTPPage({ email, onSuccess, onBack }: { email: string; onSuccess: () => void; onBack: () => void }) {
   const [otp, setOtp] = useState(["","","","","",""]);
+  const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [secs, setSecs] = useState(60);
+  const [cooldown, setCooldown] = useState(0);
   const refs = Array.from({ length: 6 }, () => useRef<HTMLInputElement>(null));
   useEffect(() => { const t = setInterval(() => setSecs(s => Math.max(s-1, 0)), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown(s => Math.max(s - 1, 0)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
+
+  function getOtpError(err: unknown): string {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("429") || msg.includes("rate") || msg.includes("Too Many Requests") || msg.includes("over_email_send_rate_limit")) {
+      return "Terlalu banyak permintaan. Silakan tunggu beberapa saat.";
+    }
+    if (msg.includes("otp_expired") || msg.includes("expired")) {
+      return "Kode OTP sudah kedaluwarsa. Silakan kirim ulang.";
+    }
+    if (msg.includes("otp") || msg.includes("token")) {
+      return "Kode OTP yang Anda masukkan salah.";
+    }
+    return msg || "Terjadi kesalahan. Silakan coba lagi.";
+  }
+
+  async function handleVerify() {
+    if (otp.join("").length < 6) { toast.error("Masukkan 6 digit kode OTP"); return; }
+    setLoading(true);
+    try {
+      await verifyOtp(email, otp.join(""));
+      toast.success("Verifikasi berhasil!");
+      onSuccess();
+    } catch (err: unknown) {
+      const m = getOtpError(err);
+      toast.error(m);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setResendLoading(true);
+    try {
+      await requestOtp(email);
+      setSecs(60);
+      toast.success("Kode baru dikirim");
+    } catch (err: unknown) {
+      const m = getOtpError(err);
+      toast.error(m);
+      if (m.includes("Terlalu banyak")) setCooldown(60);
+    } finally {
+      setResendLoading(false);
+    }
+  }
+
   function inp(i: number, val: string) {
     const d = val.replace(/\D/,"").slice(-1); const n = [...otp]; n[i] = d; setOtp(n);
     if (d && i < 5) refs[i+1].current?.focus();
@@ -29,8 +83,18 @@ export function OTPPage({ onSuccess, onBack }: { onSuccess: () => void; onBack: 
               className="w-11 h-12 text-center text-xl font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white rounded-xl outline-none focus:border-blue-500 transition" />
           ))}
         </div>
-        <button onClick={() => { if (otp.join("").length < 6) { toast.error("Masukkan 6 digit kode OTP"); return; } toast.success("Verifikasi berhasil!"); onSuccess(); }} className="w-full py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all mb-3">Verifikasi</button>
-        {secs > 0 ? <p className="text-xs text-slate-400">Kirim ulang dalam <strong>{secs}s</strong></p> : <button onClick={() => { setSecs(60); toast.success("Kode baru dikirim"); }} className="text-xs text-blue-600 hover:underline">Kirim Ulang</button>}
+        <button onClick={handleVerify} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70 mb-3">
+          {loading ? <><Loader2 size={15} className="animate-spin" />Memverifikasi...</> : "Verifikasi"}
+        </button>
+        {secs > 0 && !cooldown ? (
+          <p className="text-xs text-slate-400">Kirim ulang dalam <strong>{secs}s</strong></p>
+        ) : cooldown > 0 ? (
+          <p className="text-xs text-amber-600">Tunggu <strong>{cooldown}s</strong> untuk kirim ulang</p>
+        ) : (
+          <button onClick={handleResend} disabled={resendLoading} className="text-xs text-blue-600 hover:underline disabled:opacity-50">
+            {resendLoading ? "Mengirim..." : "Kirim Ulang"}
+          </button>
+        )}
         <button onClick={onBack} className="block w-full mt-3 py-2 text-sm text-slate-500 hover:text-slate-700 transition">← Kembali</button>
       </div>
     </div>
