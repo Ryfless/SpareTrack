@@ -55,9 +55,14 @@ export async function verifyOtp(email: string, token: string) {
 export async function signInWithGoogle() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
+    options: {
+      redirectTo: window.location.origin,
+    },
   });
   if (error) throw error;
-  return data;
+  if (data?.url) {
+    window.location.href = data.url;
+  }
 }
 
 export async function logout() {

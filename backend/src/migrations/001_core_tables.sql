@@ -16,10 +16,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile"
   ON public.profiles FOR SELECT
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE
   USING (auth.uid() = id);
@@ -61,6 +63,7 @@ CREATE TABLE IF NOT EXISTS public.branches (
 
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Branches are readable by authenticated users" ON public.branches;
 CREATE POLICY "Branches are readable by authenticated users"
   ON public.branches FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -75,6 +78,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Categories are readable by authenticated users" ON public.categories;
 CREATE POLICY "Categories are readable by authenticated users"
   ON public.categories FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -95,6 +99,7 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
 
 ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Suppliers are readable by authenticated users" ON public.suppliers;
 CREATE POLICY "Suppliers are readable by authenticated users"
   ON public.suppliers FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -119,6 +124,7 @@ CREATE TABLE IF NOT EXISTS public.spareparts (
 
 ALTER TABLE public.spareparts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Spareparts are readable by authenticated users" ON public.spareparts;
 CREATE POLICY "Spareparts are readable by authenticated users"
   ON public.spareparts FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -135,6 +141,7 @@ CREATE TABLE IF NOT EXISTS public.branch_stocks (
 
 ALTER TABLE public.branch_stocks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Branch stocks are readable by authenticated users" ON public.branch_stocks;
 CREATE POLICY "Branch stocks are readable by authenticated users"
   ON public.branch_stocks FOR SELECT
   USING (auth.role() = 'authenticated');
@@ -154,14 +161,24 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
 
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Stock movements are readable by authenticated users" ON public.stock_movements;
 CREATE POLICY "Stock movements are readable by authenticated users"
   ON public.stock_movements FOR SELECT
   USING (auth.role() = 'authenticated');
 
 -- Grant permissions for service_role and authenticated roles
-GRANT USAGE ON SCHEMA public TO service_role, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+DO $$ BEGIN
+  GRANT USAGE ON SCHEMA public TO service_role, authenticated;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+DO $$ BEGIN
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+EXCEPTION WHEN others THEN NULL;
+END $$;
 
 -- Seed data: Branches
 INSERT INTO public.branches (name, code, city) VALUES

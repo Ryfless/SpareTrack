@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const config = require('./config');
 const errorHandler = require('./middlewares/errorHandler');
-const authRoutes = require('./routes/auth');
+const apiRoutes = require('./routes/index');
 const { authenticate } = require('./middlewares/auth');
 const { me } = require('./controllers/authController');
 
@@ -19,7 +19,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1', apiRoutes);
 app.get('/api/v1/me', authenticate, me);
 
 app.use(errorHandler);

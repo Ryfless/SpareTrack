@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Globe, Moon, Bell, Sliders, Shield, Users, History, Info, User, Save,
   Lock, Smartphone, KeyRound, ChevronRight, Plus, Download, BarChart3,
@@ -6,12 +6,24 @@ import {
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
 import { FormField } from "../../components/shared/FormField";
+import { Skeleton } from "../../components/shared/Skeleton";
 import { EditProfileModal } from "../../components/modals/EditProfileModal";
 import { inputCls } from "../../config";
+import { getSettings, updateSettings, type SettingsResponse } from "../../services/settings";
 
 export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditProfile: () => void; darkMode: boolean; setDarkMode: (v: boolean) => void }) {
   const [tab, setTab] = useState("general");
+  const [settingsData, setSettingsData] = useState<SettingsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [notif, setNotif] = useState({ emailKritis: true, emailRestock: true, browser: false, weekly: true });
+
+  useEffect(() => {
+    setLoading(true);
+    getSettings()
+      .then(setSettingsData)
+      .catch(() => toast.error("Gagal memuat pengaturan"))
+      .finally(() => setLoading(false));
+  }, []);
 
   function Toggle({ val, onChange }: { val: boolean; onChange: (v: boolean) => void }) {
     return <button onClick={() => onChange(!val)} className={`relative w-10 h-5 rounded-full transition-colors ${val?"bg-blue-600":"bg-slate-300 dark:bg-slate-600"}`}><div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${val?"translate-x-5":""}`} /></button>;
@@ -31,6 +43,13 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
     { id:"about",       label:"Tentang",         icon:Info         },
   ];
 
+  if (loading) {
+    return <div className="flex gap-5"><div className="w-44 shrink-0"><Skeleton className="h-80" /></div><div className="flex-1"><Skeleton className="h-96" /></div></div>;
+  }
+
+  const p = settingsData?.profile;
+  const s = settingsData?.settings as Record<string, string> | undefined;
+
   return (
     <div className="flex gap-5">
       <div className="w-44 shrink-0">
@@ -43,12 +62,12 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
           <Card className="p-6">
             <h3 className="font-bold text-slate-800 dark:text-slate-200 mb-5">Pengaturan Umum</h3>
             <div className="flex items-center gap-4 mb-6 pb-5 border-b border-slate-100 dark:border-slate-800">
-              <div className="w-14 h-14 rounded-full bg-blue-700 flex items-center justify-center text-xl font-bold text-white">A</div>
-              <div><div className="font-semibold text-slate-800 dark:text-slate-200">Admin Pusat</div><div className="text-xs text-slate-400">admin@sparetrack.id · Super Admin</div></div>
+              <div className="w-14 h-14 rounded-full bg-blue-700 flex items-center justify-center text-xl font-bold text-white">{p?.full_name?.[0] || 'A'}</div>
+              <div><div className="font-semibold text-slate-800 dark:text-slate-200">{p?.full_name || '-'}</div><div className="text-xs text-slate-400">{p?.email} · {p?.role === 'super_admin' ? 'Super Admin' : p?.role || '-'}</div></div>
               <button onClick={onEditProfile} className="ml-auto flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><User size={13} />Edit Profil</button>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
-              {[["Nama","Admin Pusat"],["Email","admin@sparetrack.id"],["Jabatan","Administrator"],["No. HP","081234567890"],["Role","Super Admin"],["Last Login","07 Jul 2025, 08:42"]].map(([l, v]) => (
+              {[["Nama", p?.full_name || '-'],["Email", p?.email || '-'],["Role", p?.role === 'super_admin' ? 'Super Admin' : p?.role || '-'],["No. HP", p?.phone || '-'],["Cabang", p?.branch || '-'],["ID", p?.id?.slice(0,12) || '-']].map(([l, v]) => (
                 <div key={l}><div className="text-xs text-slate-400 mb-0.5">{l}</div><div className="font-medium text-slate-700 dark:text-slate-300">{v}</div></div>
               ))}
             </div>
@@ -78,14 +97,21 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
             <p className="text-xs text-slate-400 mb-5">Konfigurasi kalkulasi reorder dan prediksi SMA</p>
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 mb-5">
               <div className="flex items-center gap-2 mb-3"><span className="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Model Forecasting</span><span className="text-xs px-2 py-0.5 bg-blue-700 text-white rounded-full font-semibold">SMA Aktif</span></div>
-              <FormField label="Periode SMA (bulan)"><div className="flex items-center gap-3"><input defaultValue="3" type="number" min="1" max="12" className="w-20 px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200 text-center" /><span className="text-xs text-slate-500">bulan data historis</span></div></FormField>
+              <FormField label="Periode SMA (bulan)"><div className="flex items-center gap-3"><input defaultValue={s?.['sma_period'] || '3'} type="number" min="1" max="12" className="w-20 px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200 text-center" /><span className="text-xs text-slate-500">bulan data historis</span></div></FormField>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              {[["Default Min. Stok","10","unit"],["Multiplier Safety Stock","1.5","×"],["Reorder Point Multiplier","2.0","×"],["Buffer Lead Time","20","%"]].map(([l, v, u]) => (
-                <FormField key={l} label={l}><div className="flex items-center gap-2"><input defaultValue={v} type="number" step="0.1" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200" /><span className="text-xs text-slate-400 shrink-0">{u}</span></div></FormField>
+              {[["default_min_stock", s?.['default_min_stock'] || '10', "unit"],["safety_stock_multiplier", s?.['safety_stock_multiplier'] || '1.5', "×"],["reorder_point_multiplier", s?.['reorder_point_multiplier'] || '2.0', "×"],["buffer_lead_time", s?.['buffer_lead_time'] || '20', "%"]].map(([key, val, unit]) => (
+                <FormField key={key} label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}><div className="flex items-center gap-2"><input defaultValue={val} type="number" step="0.1" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200" /><span className="text-xs text-slate-400 shrink-0">{unit}</span></div></FormField>
               ))}
             </div>
-            <button onClick={() => toast.success("Parameter sistem diperbarui")} className="mt-5 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Save size={13} />Simpan Parameter</button>
+            <button onClick={async () => {
+              const btn = document.activeElement as HTMLButtonElement;
+              try {
+                const period = (document.querySelector('#param_sma') as HTMLInputElement)?.value || '3';
+                await updateSettings({ key: 'sma_period', value: Number(period) });
+                toast.success("Parameter sistem diperbarui");
+              } catch { toast.error("Gagal menyimpan parameter"); }
+            }} className="mt-5 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Save size={13} />Simpan Parameter</button>
           </Card>
         )}
         {tab === "keamanan" && (
@@ -103,6 +129,19 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
                 </div>
               ))}
             </div>
+            {settingsData?.api_tokens && settingsData.api_tokens.length > 0 && (
+              <div className="mt-5">
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">API Token Aktif</div>
+                <div className="space-y-2">
+                  {settingsData.api_tokens.filter(t => t.is_active).map(t => (
+                    <div key={t.id} className="flex items-center justify-between p-3 border border-slate-100 dark:border-slate-800 rounded-lg">
+                      <div><div className="text-sm font-medium text-slate-700 dark:text-slate-300">{t.name}</div><div className="text-xs text-slate-400">Dibuat {new Date(t.created_at).toLocaleDateString('id-ID')}</div></div>
+                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-xs font-medium text-emerald-600">Aktif</span></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         )}
         {tab === "pengguna" && (

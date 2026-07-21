@@ -17,6 +17,7 @@ export const STATUS_CFG = {
 };
 
 export const PRIORITY_CFG: Record<string, { label: string; cls: string }> = {
+  critical:  { label: "Critical",  cls: "bg-red-600 text-white border-red-700"              },
   high:      { label: "High",      cls: "bg-red-50 text-red-700 border-red-200"             },
   medium:    { label: "Medium",    cls: "bg-amber-50 text-amber-700 border-amber-200"       },
   low:       { label: "Low",       cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
