@@ -13,6 +13,7 @@ import { inputCls } from "../../config";
 import { getSettings, updateSettings, type SettingsResponse } from "../../services/settings";
 import { getUsers, toggleUserActive } from "../../services/users";
 import type { User as UserType } from "../../services/users";
+import { getAuditLogs, type AuditLogEntry } from "../../services/auditLog";
 
 export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditProfile: () => void; darkMode: boolean; setDarkMode: (v: boolean) => void }) {
   const [tab, setTab] = useState("general");
@@ -25,6 +26,43 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
   const [usersPage, setUsersPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserType | null>(null);
+
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [auditLogsMeta, setAuditLogsMeta] = useState({ page: 1, total: 0, total_pages: 0 });
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditLogsPage, setAuditLogsPage] = useState(1);
+  const [auditFilterAction, setAuditFilterAction] = useState("");
+  const [auditFilterStartDate, setAuditFilterStartDate] = useState("");
+  const [auditFilterEndDate, setAuditFilterEndDate] = useState("");
+  const [auditFilterSearch, setAuditFilterSearch] = useState("");
+  const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLogEntry | null>(null);
+
+  const loadAuditLogs = useCallback(async (page = 1, filters = {}) => {
+    setAuditLogsLoading(true);
+    try {
+      const res = await getAuditLogs({
+        page,
+        limit: 15,
+        action: auditFilterAction || undefined,
+        start_date: auditFilterStartDate || undefined,
+        end_date: auditFilterEndDate || undefined,
+        search: auditFilterSearch || undefined,
+        ...filters,
+      });
+      setAuditLogs(res.data || []);
+      if (res.meta) {
+        setAuditLogsMeta({
+          page: Number(res.meta.page) || 1,
+          total: Number(res.meta.total) || 0,
+          total_pages: Number(res.meta.total_pages) || 0,
+        });
+      }
+    } catch {
+      toast.error("Gagal memuat audit log");
+    } finally {
+      setAuditLogsLoading(false);
+    }
+  }, [auditFilterAction, auditFilterStartDate, auditFilterEndDate, auditFilterSearch]);
 
   const loadUsers = useCallback(async (page = 1) => {
     setUsersLoading(true);
@@ -56,6 +94,10 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
   useEffect(() => {
     if (tab === "pengguna") loadUsers(usersPage);
   }, [tab, usersPage, loadUsers]);
+
+  useEffect(() => {
+    if (tab === "audit") loadAuditLogs(auditLogsPage);
+  }, [tab, auditLogsPage, loadAuditLogs]);
 
   function Toggle({ val, onChange }: { val: boolean; onChange: (v: boolean) => void }) {
     return <button onClick={() => onChange(!val)} className={`relative w-10 h-5 rounded-full transition-colors ${val?"bg-blue-600":"bg-slate-300 dark:bg-slate-600"}`}><div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${val?"translate-x-5":""}`} /></button>;
@@ -229,23 +271,86 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
               <h3 className="font-bold text-slate-800 dark:text-slate-200">Audit Log</h3>
               <button onClick={() => toast.success("Audit log diekspor")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-lg transition-all"><Download size={13} />Export</button>
             </div>
-            <div className="space-y-3">
-              {[
-                { user:"Admin Pusat", action:"Menambah sparepart baru: Timing Belt Kit",      time:"06 Jul 2025 14:32", module:"Inventory",    ip:"192.168.1.1" },
-                { user:"Admin B",     action:"Mencatat stok keluar: Kampas Rem ×5",           time:"06 Jul 2025 13:15", module:"Transactions", ip:"192.168.1.2" },
-                { user:"Admin Pusat", action:"Menyetujui PO #045 untuk Gates",               time:"05 Jul 2025 10:40", module:"Restock",      ip:"192.168.1.1" },
-                { user:"Admin A",     action:"Transfer 10× Busi NGK ke Cabang C",            time:"05 Jul 2025 09:20", module:"Transactions", ip:"192.168.1.3" },
-              ].map((log, i) => (
-                <div key={i} className="flex gap-4 p-3 border border-slate-100 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                  <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">{log.user[0]}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">{log.user}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{log.action}</div>
-                    <div className="flex items-center gap-3 mt-1 text-xs text-slate-400"><span>{log.time}</span><span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded">{log.module}</span><span style={{ fontFamily:"'JetBrains Mono', monospace" }}>{log.ip}</span></div>
+            <div className="flex flex-wrap items-end gap-4 mb-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Filter Aksi</label>
+                <select value={auditFilterAction} onChange={e => { setAuditFilterAction(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`}>
+                  <option value="">Semua Aksi</option>
+                  <option value="create_po">Buat PO</option>
+                  <option value="approve_po">Setujui PO</option>
+                  <option value="approve_restock">Setujui Restock</option>
+                  <option value="reject_restock">Tolak Restock</option>
+                  <option value="generate_restock">Generate Restock</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Dari Tanggal</label>
+                <input type="date" value={auditFilterStartDate} onChange={e => { setAuditFilterStartDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Sampai Tanggal</label>
+                <input type="date" value={auditFilterEndDate} onChange={e => { setAuditFilterEndDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Carian</label>
+                <input type="text" value={auditFilterSearch} onChange={e => { setAuditFilterSearch(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-48`} placeholder="Cari aksi atau tipe..." />
+              </div>
+            </div>
+            {auditLogsLoading ? (
+              <div className="space-y-3">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-12" />)}</div>
+            ) : auditLogs.length === 0 ? (
+              <div className="text-center py-10 text-sm text-slate-400">Belum ada audit log</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">{["User","Aksi","Tipe","Waktu","IP"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500">{h}</th>)}</tr></thead>
+                <tbody>{auditLogs.map(log => (
+                  <tr key={log.id} onClick={() => setSelectedAuditLog(log)} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer">
+                    <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">{log.user_name[0] || '?'}</div><span className="font-medium text-slate-700 dark:text-slate-300">{log.user_name}</span></div></td>
+                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-48 truncate">{log.action}</td>
+                    <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{log.entity_type}</span></td>
+                    <td className="px-4 py-3 text-xs text-slate-400">{new Date(log.created_at).toLocaleString('id-ID')}</td>
+                    <td className="px-4 py-3 text-xs text-slate-400" style={{ fontFamily:"'JetBrains Mono', monospace" }}>{log.ip_address || <span className="text-slate-300 dark:text-slate-600">&mdash;</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+            {auditLogsMeta.total_pages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs text-slate-400">Total {auditLogsMeta.total} log</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setAuditLogsPage(p => Math.max(1, p-1))} disabled={auditLogsPage <= 1} className="px-3 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30">Prev</button>
+                  <span className="text-xs text-slate-500">{auditLogsPage} / {auditLogsMeta.total_pages}</span>
+                  <button onClick={() => setAuditLogsPage(p => Math.min(auditLogsMeta.total_pages, p+1))} disabled={auditLogsPage >= auditLogsMeta.total_pages} className="px-3 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30">Next</button>
+                </div>
+              </div>
+            )}
+            {selectedAuditLog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setSelectedAuditLog(null)}>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-5 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200">Detail Audit Log</h4>
+                      <button onClick={() => setSelectedAuditLog(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-4 text-sm">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><div className="text-xs text-slate-400">User</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedAuditLog.user_name}</div></div>
+                      <div><div className="text-xs text-slate-400">Email</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedAuditLog.user_email}</div></div>
+                      <div><div className="text-xs text-slate-400">Aksi</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedAuditLog.action}</div></div>
+                      <div><div className="text-xs text-slate-400">Tipe Entitas</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedAuditLog.entity_type}</div></div>
+                      <div><div className="text-xs text-slate-400">ID Entitas</div><div className="font-medium text-slate-700 dark:text-slate-300 text-xs truncate">{selectedAuditLog.entity_id || '-'}</div></div>
+                      <div><div className="text-xs text-slate-400">IP Address</div><div className="font-medium text-slate-700 dark:text-slate-300">{selectedAuditLog.ip_address || <span className="text-slate-400 italic">Tidak tercatat</span>}</div></div>
+                      <div className="col-span-2"><div className="text-xs text-slate-400">Waktu</div><div className="font-medium text-slate-700 dark:text-slate-300">{new Date(selectedAuditLog.created_at).toLocaleString('id-ID')}</div></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><div className="text-xs text-slate-400 mb-1 font-semibold">Data Lama (old_data)</div><pre className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-xs overflow-auto max-h-40" style={{ fontFamily:"'JetBrains Mono', monospace" }}>{JSON.stringify(selectedAuditLog.old_data, null, 2)}</pre></div>
+                      <div><div className="text-xs text-slate-400 mb-1 font-semibold">Data Baru (new_data)</div><pre className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-xs overflow-auto max-h-40" style={{ fontFamily:"'JetBrains Mono', monospace" }}>{JSON.stringify(selectedAuditLog.new_data, null, 2)}</pre></div>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </Card>
         )}
         {tab === "about" && (

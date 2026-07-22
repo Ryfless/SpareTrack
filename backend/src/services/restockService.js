@@ -256,7 +256,7 @@ async function detailRecommendation(id) {
   };
 }
 
-async function approveRecommendation(id, userId) {
+async function approveRecommendation(id, userId, ip_address = '') {
   const { data: rec, error: findError } = await supabase
     .from('restock_recommendations')
     .select('*')
@@ -289,13 +289,13 @@ async function approveRecommendation(id, userId) {
     entity_id: id,
     old_data: { status: rec.status },
     new_data: { status: 'approved' },
-    ip_address: '',
+    ip_address,
   });
 
   return data;
 }
 
-async function rejectRecommendation(id, userId) {
+async function rejectRecommendation(id, userId, ip_address = '') {
   const { data: rec, error: findError } = await supabase
     .from('restock_recommendations')
     .select('*')
@@ -328,7 +328,7 @@ async function rejectRecommendation(id, userId) {
     entity_id: id,
     old_data: { status: rec.status },
     new_data: { status: 'rejected' },
-    ip_address: '',
+    ip_address,
   });
 
   return data;
@@ -478,7 +478,7 @@ async function purchaseOrderDetail(poId) {
   };
 }
 
-async function approvePurchaseOrder(poId, userId) {
+async function approvePurchaseOrder(poId, userId, ip_address = '') {
   const { data: po, error } = await supabase
     .from('purchase_orders')
     .select('*, purchase_order_items(*, spareparts(name, code))')
@@ -554,7 +554,7 @@ async function approvePurchaseOrder(poId, userId) {
     entity_id: poId,
     old_data: { status: 'pending' },
     new_data: { status: 'approved' },
-    ip_address: '',
+    ip_address,
   });
 
   try {

@@ -56,7 +56,7 @@ async function list(query) {
 }
 
 async function create(data) {
-  const { type, sparepart_id, branch_id, quantity, notes, reference_id, created_by, destination_branch_id } = data;
+  const { type, sparepart_id, branch_id, quantity, notes, reference_id, created_by, destination_branch_id, ip_address = '' } = data;
 
   const validTypes = ['in', 'out', 'transfer', 'adjustment'];
   if (!validTypes.includes(type)) {
@@ -135,6 +135,16 @@ async function create(data) {
       description: `Transfer ${qty}× sparepart ke cabang tujuan (${notes || ''})`,
     });
 
+    await supabase.from('audit_logs').insert({
+      user_id: created_by,
+      action: 'transfer',
+      entity_type: 'stock_movement',
+      entity_id: outMovement.id,
+      old_data: {},
+      new_data: { type, sparepart_id, branch_id, destination_branch_id, quantity: qty, notes },
+      ip_address,
+    });
+
     return { out: outMovement, in: inMovement };
   }
 
@@ -170,6 +180,16 @@ async function create(data) {
     entity_type: 'stock_movement',
     entity_id: movement.id,
     description: `${activityText[type] || ''}${notes || ''}`,
+  });
+
+  await supabase.from('audit_logs').insert({
+    user_id: created_by,
+    action: type,
+    entity_type: 'stock_movement',
+    entity_id: movement.id,
+    old_data: {},
+    new_data: { type, sparepart_id, branch_id, quantity, notes },
+    ip_address,
   });
 
   return movement;

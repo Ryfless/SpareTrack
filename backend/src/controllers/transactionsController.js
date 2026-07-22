@@ -1,5 +1,6 @@
 const transactionsService = require('../services/transactionsService');
 const { success, error } = require('../utils/response');
+const { getClientIp } = require('../utils/ip');
 
 exports.list = async (req, res, next) => {
   try {
@@ -19,6 +20,7 @@ exports.create = async (req, res, next) => {
     const data = await transactionsService.create({
       ...req.body,
       created_by: req.user.id,
+      ip_address: getClientIp(req),
     });
     return success(res, data, 'Transaksi berhasil dicatat', null, 201);
   } catch (err) {

@@ -11,6 +11,7 @@ const settingsRoutes = require('./settings');
 const referencesRoutes = require('./references');
 const usersRoutes = require('./users');
 const notificationRoutes = require('./notifications');
+const auditLogRoutes = require('./auditLogs');
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/settings', settingsRoutes);
 router.use('/', referencesRoutes);
 router.use('/users', usersRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/audit-logs', auditLogRoutes);
 
 module.exports = router;

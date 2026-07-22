@@ -1,6 +1,7 @@
 const restockService = require('../services/restockService');
 const schedulerService = require('../services/schedulerService');
 const { success, error } = require('../utils/response');
+const { getClientIp } = require('../utils/ip');
 
 exports.generate = async (req, res, next) => {
   try {
@@ -41,7 +42,7 @@ exports.detailRecommendation = async (req, res, next) => {
 
 exports.approveRecommendation = async (req, res, next) => {
   try {
-    const data = await restockService.approveRecommendation(req.params.id, req.user.id);
+    const data = await restockService.approveRecommendation(req.params.id, req.user.id, getClientIp(req));
     if (!data) return error(res, 'Rekomendasi tidak ditemukan', null, 404);
     return success(res, data, 'Rekomendasi berhasil diapprove');
   } catch (err) {
@@ -51,7 +52,7 @@ exports.approveRecommendation = async (req, res, next) => {
 
 exports.rejectRecommendation = async (req, res, next) => {
   try {
-    const data = await restockService.rejectRecommendation(req.params.id, req.user.id);
+    const data = await restockService.rejectRecommendation(req.params.id, req.user.id, getClientIp(req));
     if (!data) return error(res, 'Rekomendasi tidak ditemukan', null, 404);
     return success(res, data, 'Rekomendasi berhasil ditolak');
   } catch (err) {
@@ -92,7 +93,7 @@ exports.purchaseOrderDetail = async (req, res, next) => {
 
 exports.approvePO = async (req, res, next) => {
   try {
-    const data = await restockService.approvePurchaseOrder(req.params.id, req.user.id);
+    const data = await restockService.approvePurchaseOrder(req.params.id, req.user.id, getClientIp(req));
     if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
     return success(res, data, 'PO berhasil disetujui, stok ditambahkan');
   } catch (err) {
