@@ -1,4 +1,6 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 
 async function summary(query) {
   const { branch_id, start_date, end_date } = query;
@@ -56,4 +58,275 @@ async function summary(query) {
   };
 }
 
-module.exports = { summary };
+function validateDateRange(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffDays = (end - start) / (1000 * 60 * 60 * 24);
+  if (diffDays > 30) {
+    const err = new Error('Rentang tanggal maksimal 30 hari');
+    err.status = 400;
+    throw err;
+  }
+}
+
+async function fetchTransactions(startDate, endDate, branchId) {
+  let qry = supabase
+    .from('stock_movements')
+    .select('*, spareparts(name, code), branches(name)')
+    .gte('created_at', startDate)
+    .lte('created_at', endDate)
+    .order('created_at', { ascending: false });
+
+  if (branchId) qry = qry.eq('branch_id', branchId);
+
+  const { data } = await qry;
+  return data || [];
+}
+
+async function fetchCriticalItems() {
+  const { data } = await supabase
+    .from('branch_stocks')
+    .select('*, spareparts(name, code, safety_stock, reorder_point), branches(name)')
+    .lte('quantity', 10)
+    .order('quantity', { ascending: true });
+
+  return data || [];
+}
+
+async function exportPdf(type, startDate, endDate, branchId) {
+  validateDateRange(startDate, endDate);
+
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  const buffers = [];
+  doc.on('data', c => buffers.push(c));
+
+  return new Promise(async (resolve, reject) => {
+    try {
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+      const label = type === 'summary' ? 'Ringkasan Laporan'
+        : type === 'transactions' ? 'Transaksi Stok'
+        : 'Item Stok Kritis';
+
+      doc.fontSize(16).font('Helvetica-Bold').text('SpareTrack', { align: 'left' });
+      doc.fontSize(10).font('Helvetica').fillColor('#666').text('Multi-Branch System — Laporan Export', { align: 'left' });
+      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ccc').stroke();
+      doc.moveDown(0.5);
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('#000').text(label);
+      doc.fontSize(9).fillColor('#666').text(`Periode: ${new Date(startDate).toLocaleDateString('id-ID')} — ${new Date(endDate).toLocaleDateString('id-ID')}`);
+      if (branchId) doc.text(`Cabang: ${branchId}`);
+      doc.moveDown(1);
+
+      if (type === 'summary') {
+        const data = await summary({ start_date: startDate, end_date: endDate, branch_id: branchId });
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#000').text('Ringkasan Pergerakan Stok');
+        doc.moveDown(0.3);
+        const rows = [
+          ['Total Masuk', String(data.stock_movements.total_in)],
+          ['Total Keluar', String(data.stock_movements.total_out)],
+          ['Penyesuaian', String(data.stock_movements.total_adjustment)],
+          ['Transfer', String(data.stock_movements.total_transfer)],
+          ['Net Flow', String(data.stock_movements.net_flow)],
+        ];
+        drawTable(doc, ['Metrik', 'Nilai'], rows);
+        doc.moveDown(1);
+        doc.fontSize(10).font('Helvetica-Bold').text('Ringkasan Inventori');
+        doc.moveDown(0.3);
+        const invRows = [
+          ['Total Item', String(data.inventory.total_items)],
+          ['Item Kritis', String(data.inventory.critical_items)],
+        ];
+        drawTable(doc, ['Metrik', 'Nilai'], invRows);
+
+        if (data.inventory.critical_list.length > 0) {
+          doc.moveDown(1);
+          doc.fontSize(10).font('Helvetica-Bold').text('Item Stok Kritis');
+          doc.moveDown(0.3);
+          const critRows = data.inventory.critical_list.map(c => [c.name, c.code, c.branch, String(c.quantity)]);
+          drawTable(doc, ['Sparepart', 'Kode', 'Cabang', 'Stok'], critRows);
+        }
+      } else if (type === 'transactions') {
+        const transactions = await fetchTransactions(startDate, endDate, branchId);
+        if (transactions.length === 0) {
+          doc.fontSize(10).font('Helvetica').fillColor('#666').text('Tidak ada transaksi dalam periode ini.');
+        } else {
+          const tRows = transactions.map(t => [
+            t.spareparts?.code || '-',
+            t.spareparts?.name || '-',
+            t.type,
+            String(Math.abs(t.quantity)),
+            t.branches?.name || '-',
+            new Date(t.created_at).toLocaleDateString('id-ID'),
+          ]);
+          drawTable(doc, ['Kode', 'Sparepart', 'Tipe', 'Qty', 'Cabang', 'Tanggal'], tRows);
+        }
+      } else if (type === 'critical') {
+        const items = await fetchCriticalItems();
+        if (items.length === 0) {
+          doc.fontSize(10).font('Helvetica').fillColor('#666').text('Tidak ada item kritis.');
+        } else {
+          const cRows = items.map(c => [
+            c.spareparts?.code || '-',
+            c.spareparts?.name || '-',
+            c.branches?.name || '-',
+            String(c.quantity),
+            String(c.spareparts?.reorder_point || '-'),
+          ]);
+          drawTable(doc, ['Kode', 'Sparepart', 'Cabang', 'Stok', 'Reorder'], cRows);
+        }
+      }
+
+      doc.moveDown(2);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ccc').stroke();
+      doc.moveDown(0.3);
+      doc.fontSize(8).fillColor('#999').text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, { align: 'center' });
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function drawTable(doc, headers, rows) {
+  const colWidth = (545 - 50) / headers.length;
+  const startX = 50;
+  let y = doc.y;
+
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#fff');
+  doc.rect(startX, y, 545 - 50, 16).fill('#1d4ed8');
+  doc.fillColor('#fff');
+  headers.forEach((h, i) => {
+    doc.text(h, startX + i * colWidth + 3, y + 4, { width: colWidth - 4, align: 'left' });
+  });
+  y += 16;
+
+  doc.fontSize(8).font('Helvetica').fillColor('#333');
+  for (const row of rows) {
+    if (y > 750) {
+      doc.addPage();
+      y = 50;
+    }
+    const fill = rows.indexOf(row) % 2 === 0 ? '#f8fafc' : '#fff';
+    doc.rect(startX, y, 545 - 50, 16).fill(fill);
+    doc.fillColor('#333');
+    row.forEach((cell, i) => {
+      doc.text(String(cell), startX + i * colWidth + 3, y + 4, { width: colWidth - 4, align: 'left' });
+    });
+    y += 16;
+  }
+
+  doc.y = y;
+}
+
+async function exportExcel(type, startDate, endDate, branchId) {
+  validateDateRange(startDate, endDate);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SpareTrack';
+  const sheet = workbook.addWorksheet(type === 'summary' ? 'Ringkasan' : type === 'transactions' ? 'Transaksi' : 'Item Kritis');
+
+  const headerStyle = {
+    font: { bold: true, color: { argb: 'FFFFFFFF' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } },
+    border: {
+      top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+    },
+  };
+  const cellStyle = {
+    border: {
+      top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+    },
+  };
+
+  if (type === 'summary') {
+    const data = await summary({ start_date: startDate, end_date: endDate, branch_id: branchId });
+    sheet.addRow(['Metrik', 'Nilai']);
+    sheet.getRow(1).eachCell(c => { c.style = headerStyle; });
+    sheet.addRow(['Total Masuk', data.stock_movements.total_in]);
+    sheet.addRow(['Total Keluar', data.stock_movements.total_out]);
+    sheet.addRow(['Penyesuaian', data.stock_movements.total_adjustment]);
+    sheet.addRow(['Transfer', data.stock_movements.total_transfer]);
+    sheet.addRow(['Net Flow', data.stock_movements.net_flow]);
+    sheet.addRow([]);
+    sheet.addRow(['Total Item', data.inventory.total_items]);
+    sheet.addRow(['Item Kritis', data.inventory.critical_items]);
+    const lastRowSummary = sheet.lastRow.number;
+    for (let r = 2; r <= lastRowSummary; r++) {
+      sheet.getRow(r).eachCell(c => { c.style = cellStyle; });
+    }
+    sheet.getColumn(1).width = 20;
+    sheet.getColumn(2).width = 15;
+
+    if (data.inventory.critical_list.length > 0) {
+      sheet.addRow([]);
+      sheet.addRow(['Sparepart', 'Kode', 'Cabang', 'Stok']);
+      const headerRow = sheet.lastRow;
+      headerRow.eachCell(c => { c.style = headerStyle; });
+      data.inventory.critical_list.forEach(c => {
+        sheet.addRow([c.name, c.code, c.branch, c.quantity]);
+      });
+      for (let r = headerRow.number + 1; r <= sheet.lastRow.number; r++) {
+        sheet.getRow(r).eachCell(c => { c.style = cellStyle; });
+      }
+      sheet.getColumn(3).width = 15;
+      sheet.getColumn(4).width = 10;
+    }
+  } else if (type === 'transactions') {
+    const transactions = await fetchTransactions(startDate, endDate, branchId);
+    sheet.addRow(['Kode', 'Sparepart', 'Tipe', 'Qty', 'Cabang', 'Tanggal']);
+    sheet.getRow(1).eachCell(c => { c.style = headerStyle; });
+    transactions.forEach(t => {
+      sheet.addRow([
+        t.spareparts?.code || '-',
+        t.spareparts?.name || '-',
+        t.type,
+        Math.abs(t.quantity),
+        t.branches?.name || '-',
+        new Date(t.created_at).toLocaleDateString('id-ID'),
+      ]);
+    });
+    for (let r = 2; r <= sheet.lastRow.number; r++) {
+      sheet.getRow(r).eachCell(c => { c.style = cellStyle; });
+    }
+    sheet.getColumn(1).width = 12;
+    sheet.getColumn(2).width = 25;
+    sheet.getColumn(3).width = 12;
+    sheet.getColumn(4).width = 8;
+    sheet.getColumn(5).width = 15;
+    sheet.getColumn(6).width = 13;
+  } else if (type === 'critical') {
+    const items = await fetchCriticalItems();
+    sheet.addRow(['Kode', 'Sparepart', 'Cabang', 'Stok', 'Reorder Point']);
+    sheet.getRow(1).eachCell(c => { c.style = headerStyle; });
+    items.forEach(c => {
+      sheet.addRow([
+        c.spareparts?.code || '-',
+        c.spareparts?.name || '-',
+        c.branches?.name || '-',
+        c.quantity,
+        c.spareparts?.reorder_point || '-',
+      ]);
+    });
+    for (let r = 2; r <= sheet.lastRow.number; r++) {
+      sheet.getRow(r).eachCell(c => { c.style = cellStyle; });
+    }
+    sheet.getColumn(1).width = 12;
+    sheet.getColumn(2).width = 25;
+    sheet.getColumn(3).width = 15;
+    sheet.getColumn(4).width = 8;
+    sheet.getColumn(5).width = 13;
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
+}
+
+module.exports = { summary, exportPdf, exportExcel };

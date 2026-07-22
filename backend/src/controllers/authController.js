@@ -95,3 +95,12 @@ exports.me = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.updateProfile = async (req, res, next) => {
+  try {
+    const profile = await authService.updateProfile(req.user.id, req.body);
+    return success(res, profile, 'Profil berhasil diperbarui');
+  } catch (err) {
+    next(err);
+  }
+};

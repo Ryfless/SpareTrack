@@ -6,7 +6,7 @@ const config = require('./config');
 const errorHandler = require('./middlewares/errorHandler');
 const apiRoutes = require('./routes/index');
 const { authenticate } = require('./middlewares/auth');
-const { me } = require('./controllers/authController');
+const { me, updateProfile } = require('./controllers/authController');
 
 const app = express();
 
@@ -21,6 +21,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/v1', apiRoutes);
 app.get('/api/v1/me', authenticate, me);
+app.patch('/api/v1/me', authenticate, updateProfile);
 
 app.use(errorHandler);
 

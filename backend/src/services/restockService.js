@@ -1,4 +1,5 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { sendNotificationToRole } = require('./notificationService');
 
 const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, overstock: 4 };
 
@@ -119,6 +120,17 @@ async function generate(userId) {
     entity_type: 'restock_recommendation',
     description: `Generate rekomendasi restock untuk ${spareparts.length} sparepart x ${branches.length} cabang`,
   });
+
+  const criticalCount = results.filter(r => r.urgency === 'critical').length;
+  if (criticalCount > 0) {
+    await sendNotificationToRole(
+      'super_admin',
+      'Stok Kritis Terdeteksi',
+      `Generate restock menemukan ${criticalCount} item dengan status kritis — perlu tindakan segera`,
+      'warning',
+      '/restock',
+    );
+  }
 
   return results;
 }
@@ -431,8 +443,133 @@ async function createPurchaseOrder(data) {
   return po;
 }
 
+async function purchaseOrderDetail(poId) {
+  const { data: po, error } = await supabase
+    .from('purchase_orders')
+    .select('*, suppliers(name), branches(name), purchase_order_items(*, spareparts(name, code, unit))')
+    .eq('id', poId)
+    .single();
+
+  if (error || !po) return null;
+
+  return {
+    id: po.id,
+    po_number: po.po_number,
+    supplier: po.suppliers?.name || '',
+    branch: po.branches?.name || '',
+    status: po.status,
+    total_amount: po.total_amount,
+    notes: po.notes,
+    requested_by: po.requested_by,
+    approved_at: po.approved_at,
+    received_at: po.received_at,
+    created_at: po.created_at,
+    items: (po.purchase_order_items || []).map(i => ({
+      id: i.id,
+      sparepart_id: i.sparepart_id,
+      code: i.spareparts?.code || '',
+      name: i.spareparts?.name || '',
+      unit: i.spareparts?.unit || '',
+      quantity: i.quantity,
+      unit_price: i.unit_price,
+      total_price: i.total_price,
+      received_qty: i.received_qty,
+    })),
+  };
+}
+
+async function approvePurchaseOrder(poId, userId) {
+  const { data: po, error } = await supabase
+    .from('purchase_orders')
+    .select('*, purchase_order_items(*, spareparts(name, code))')
+    .eq('id', poId)
+    .single();
+
+  if (error || !po) return null;
+  if (po.status !== 'pending') {
+    const err = new Error('PO sudah diproses sebelumnya');
+    err.status = 400;
+    throw err;
+  }
+
+  const items = po.purchase_order_items || [];
+
+  for (const item of items) {
+    const qty = Number(item.quantity);
+    if (qty <= 0) continue;
+
+    const { data: existing } = await supabase
+      .from('branch_stocks')
+      .select('id, quantity')
+      .eq('sparepart_id', item.sparepart_id)
+      .eq('branch_id', po.branch_id)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from('branch_stocks')
+        .update({ quantity: existing.quantity + qty })
+        .eq('id', existing.id);
+    } else {
+      await supabase
+        .from('branch_stocks')
+        .insert({ sparepart_id: item.sparepart_id, branch_id: po.branch_id, quantity: qty });
+    }
+
+    await supabase
+      .from('stock_movements')
+      .insert({
+        type: 'in',
+        sparepart_id: item.sparepart_id,
+        branch_id: po.branch_id,
+        quantity: qty,
+        notes: `PO ${po.po_number} — ${item.spareparts?.name || ''}`,
+        created_by: userId,
+      });
+
+    await supabase
+      .from('purchase_order_items')
+      .update({ received_qty: qty })
+      .eq('id', item.id);
+  }
+
+  await supabase
+    .from('purchase_orders')
+    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .eq('id', poId);
+
+  await supabase.from('activities').insert({
+    user_id: userId,
+    branch_id: po.branch_id,
+    action: 'approve_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    description: `Menyetujui PO ${po.po_number} — ${items.length} item masuk stok`,
+  });
+
+  await supabase.from('audit_logs').insert({
+    user_id: userId,
+    action: 'approve_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    old_data: { status: 'pending' },
+    new_data: { status: 'approved' },
+    ip_address: '',
+  });
+
+  try {
+    const { sendNotification } = require('./notificationService');
+    await sendNotification(po.requested_by, 'PO Disetujui',
+      `PO ${po.po_number} telah disetujui — ${items.length} item masuk stok`,
+      'success', '/restock');
+  } catch {}
+
+  return { id: poId, status: 'approved', items_processed: items.length };
+}
+
 module.exports = {
   generate, summary, recommendations, detailRecommendation,
   approveRecommendation, rejectRecommendation,
   purchaseOrders, createPurchaseOrder,
+  purchaseOrderDetail, approvePurchaseOrder,
 };

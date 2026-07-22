@@ -86,6 +86,35 @@ async function getProfile(userId) {
   return data;
 }
 
+async function updateProfile(userId, data) {
+  const updates = {};
+  if (data.full_name !== undefined) updates.full_name = data.full_name;
+  if (data.phone !== undefined) updates.phone = data.phone;
+  if (data.branch !== undefined) updates.branch = data.branch;
+  updates.updated_at = new Date().toISOString();
+
+  if (Object.keys(updates).length === 1) return getProfile(userId);
+
+  const { error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId);
+
+  if (error) throw error;
+
+  if (updates.full_name || updates.branch || updates.phone) {
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        full_name: updates.full_name || undefined,
+        branch: updates.branch || undefined,
+        phone: updates.phone || undefined,
+      },
+    });
+  }
+
+  return getProfile(userId);
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -93,4 +122,5 @@ module.exports = {
   verifyOtp,
   signInWithGoogle,
   getProfile,
+  updateProfile,
 };

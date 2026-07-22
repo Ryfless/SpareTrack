@@ -1,4 +1,5 @@
 import { api, type ApiResponse } from './client';
+import { supabase } from './supabase';
 
 export interface SparepartListItem {
   id: string;
@@ -100,5 +101,45 @@ export async function create(data: CreateSparepartData): Promise<SparepartDetail
 
 export async function update(id: string, data: Partial<CreateSparepartData>): Promise<SparepartDetail> {
   const response = await api.patch<SparepartDetail>(`/inventory/${id}`, data);
+  return response.data;
+}
+
+export async function exportCsv(query: InventoryQuery = {}): Promise<Blob> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== '' && value !== 'all') {
+      params.set(key, String(value));
+    }
+  });
+  const qs = params.toString();
+
+  const API_URL = import.meta.env.VITE_API_URL;
+  const url = `${API_URL}/inventory/export/csv${qs ? `?${qs}` : ''}`;
+
+  const response = await fetch(url, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+
+  if (!response.ok) throw new Error('Gagal export CSV');
+  return response.blob();
+}
+
+export interface BulkTransferItem {
+  sparepart_id: string;
+  quantity: number;
+}
+
+export interface BulkTransferData {
+  items: BulkTransferItem[];
+  source_branch_id: string;
+  destination_branch_id: string;
+  notes?: string;
+}
+
+export async function bulkTransfer(data: BulkTransferData): Promise<{ items_transferred: number; items: Array<{ code: string; name: string; quantity: number }> }> {
+  const response = await api.post<{ items_transferred: number; items: Array<{ code: string; name: string; quantity: number }> }>('/inventory/bulk/transfer', data);
   return response.data;
 }

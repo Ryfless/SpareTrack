@@ -9,6 +9,8 @@ const forecastRoutes = require('./forecast');
 const reportsRoutes = require('./reports');
 const settingsRoutes = require('./settings');
 const referencesRoutes = require('./references');
+const usersRoutes = require('./users');
+const notificationRoutes = require('./notifications');
 
 const router = Router();
 
@@ -22,5 +24,7 @@ router.use('/forecast', forecastRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/', referencesRoutes);
+router.use('/users', usersRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;

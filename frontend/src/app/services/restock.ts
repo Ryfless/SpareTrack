@@ -52,6 +52,23 @@ export interface PurchaseOrder {
   received_at: string | null;
 }
 
+export interface POItem {
+  id: string;
+  sparepart_id: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  received_qty: number | null;
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrder {
+  items: POItem[];
+  requested_by: string;
+}
+
 export interface POQuery {
   page?: number;
   limit?: number;
@@ -77,5 +94,20 @@ export interface CreatePOData {
 
 export async function createPurchaseOrder(data: CreatePOData): Promise<PurchaseOrder> {
   const response = await api.post<PurchaseOrder>('/restock/purchase-orders', data);
+  return response.data;
+}
+
+export async function generateRecommendations(): Promise<RestockRecommendation[]> {
+  const response = await api.post<RestockRecommendation[]>('/restock/recommendations/generate');
+  return response.data;
+}
+
+export async function getPurchaseOrderDetail(id: string): Promise<PurchaseOrderDetail> {
+  const response = await api.get<PurchaseOrderDetail>(`/restock/purchase-orders/${id}`);
+  return response.data;
+}
+
+export async function approvePurchaseOrder(id: string): Promise<{ status: string; items_processed: number }> {
+  const response = await api.post<{ status: string; items_processed: number }>(`/restock/purchase-orders/${id}/approve`);
   return response.data;
 }

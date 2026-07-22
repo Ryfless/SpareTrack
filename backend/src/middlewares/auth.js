@@ -1,4 +1,4 @@
-const { supabase } = require('../config/supabase');
+const { supabase, supabaseAdmin } = require('../config/supabase');
 const { error } = require('../utils/response');
 
 async function authenticate(req, res, next) {
@@ -19,11 +19,24 @@ async function authenticate(req, res, next) {
   next();
 }
 
+async function resolveRole(userId) {
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle();
+  return profile?.role || 'branch_admin';
+}
+
 function authorize(...roles) {
-  return (req, res, next) => {
-    const userRole = req.user?.app_metadata?.role
+  return async (req, res, next) => {
+    let userRole = req.user?.app_metadata?.role
       || req.user?.user_metadata?.role
       || 'branch_admin';
+
+    if (roles.length > 0 && !roles.includes(userRole)) {
+      userRole = await resolveRole(req.user.id);
+    }
 
     if (roles.length > 0 && !roles.includes(userRole)) {
       return error(res, 'Forbidden: insufficient role', null, 403);

@@ -7,7 +7,7 @@ import { KPICard } from "../../components/KPICard";
 import { ChartTip } from "../../components/shared/ChartTip";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { inputCls } from "../../config";
-import { getSummary, type ReportSummary } from "../../services/reports";
+import { getSummary, exportPdf, exportExcel, type ReportSummary } from "../../services/reports";
 
 function formatRp(n: number) {
   return `Rp ${(n / 1000000).toFixed(1)}M`;
@@ -20,6 +20,7 @@ export function ReportsPage() {
   const [endDate, setEndDate] = useState(today.toISOString().slice(0, 10));
   const [data, setData] = useState<ReportSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -35,6 +36,27 @@ export function ReportsPage() {
     { month:"Mei", rev:55.3, units:362 }, { month:"Jun", rev:58.1, units:378 },
   ];
 
+  async function handleExport(type: 'pdf' | 'excel') {
+    setExporting(type);
+    try {
+      const blob = await (type === 'pdf' ? exportPdf : exportExcel)({
+        type: 'summary',
+        start_date: startDate,
+        end_date: endDate,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-summary-${Date.now()}.${type}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Laporan ${type.toUpperCase()} berhasil diunduh`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : `Gagal export ${type.toUpperCase()}`);
+    }
+    setExporting(null);
+  }
+
   if (loading) {
     return <div className="space-y-5"><div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-28" />)}</div><Skeleton className="h-64" /><Skeleton className="h-64" /></div>;
   }
@@ -48,8 +70,12 @@ export function ReportsPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2 text-sm"><Calendar size={14} className="text-slate-400" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputCls} w-auto`} /><span className="text-slate-400">–</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${inputCls} w-auto`} /></div>
           <div className="ml-auto flex gap-2">
-            <button onClick={() => toast.success("PDF sedang dibuat")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 rounded-lg transition-all"><Download size={13} />Export PDF</button>
-            <button onClick={() => toast.success("Excel sedang diunduh")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Download size={13} />Export Excel</button>
+            <button onClick={() => handleExport('pdf')} disabled={exporting !== null} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              {exporting === 'pdf' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}Export PDF
+            </button>
+            <button onClick={() => handleExport('excel')} disabled={exporting !== null} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              {exporting === 'excel' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}Export Excel
+            </button>
           </div>
         </div>
       </Card>

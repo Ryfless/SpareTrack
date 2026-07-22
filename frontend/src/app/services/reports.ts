@@ -1,4 +1,5 @@
 import { api } from './client';
+import { supabase } from './supabase';
 
 export interface ReportSummary {
   period: { start: string; end: string };
@@ -30,4 +31,38 @@ export interface ReportQuery {
 export async function getSummary(query: ReportQuery = {}): Promise<ReportSummary> {
   const response = await api.get<ReportSummary>('/reports/summary', query as Record<string, string | number | undefined>);
   return response.data;
+}
+
+const API_URL = import.meta.env.VITE_API_URL;
+
+async function exportBlob(endpoint: string, query: ReportQuery & { type: string }): Promise<Blob> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+  const qs = params.toString();
+  const url = `${API_URL}/reports/export/${endpoint}${qs ? `?${qs}` : ''}`;
+
+  const response = await fetch(url, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ message: 'Gagal export' }));
+    throw new Error(err.message || 'Gagal export');
+  }
+  return response.blob();
+}
+
+export async function exportPdf(query: ReportQuery & { type: string }): Promise<Blob> {
+  return exportBlob('pdf', query);
+}
+
+export async function exportExcel(query: ReportQuery & { type: string }): Promise<Blob> {
+  return exportBlob('excel', query);
 }

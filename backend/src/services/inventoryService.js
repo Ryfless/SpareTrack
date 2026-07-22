@@ -1,4 +1,6 @@
+const { stringify } = require('csv-stringify/sync');
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { sendNotification, sendNotificationToBranch } = require('./notificationService');
 
 async function list(query) {
   const {
@@ -270,4 +272,231 @@ async function adjustStock(id, data, userId) {
   return movement;
 }
 
-module.exports = { list, detail, create, update, adjustStock };
+async function exportCsv(query, res) {
+  const { search, category_id, supplier_id, status } = query;
+
+  let qry = supabase
+    .from('spareparts')
+    .select('*, categories(name), suppliers(name)');
+
+  if (search) qry = qry.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
+  if (category_id) qry = qry.eq('category_id', category_id);
+  if (supplier_id) qry = qry.eq('supplier_id', supplier_id);
+
+  const { data: spareparts } = await qry;
+  if (!spareparts || spareparts.length === 0) {
+    const err = new Error('Tidak ada data sparepart');
+    err.status = 404;
+    throw err;
+  }
+
+  const enriched = [];
+  for (const sp of spareparts) {
+    const { data: stocks } = await supabase
+      .from('branch_stocks')
+      .select('quantity')
+      .eq('sparepart_id', sp.id);
+
+    const totalStock = stocks?.reduce((s, st) => s + st.quantity, 0) || 0;
+    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
+
+    let itemStatus = 'safe';
+    if (totalStock <= sp.safety_stock) itemStatus = 'critical';
+    else if (totalStock <= sp.reorder_point) itemStatus = 'low';
+    else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+
+    if (status && itemStatus !== status) continue;
+
+    enriched.push({
+      code: sp.code,
+      name: sp.name,
+      category: sp.categories?.name || '',
+      supplier: sp.suppliers?.name || '',
+      price: sp.price,
+      min_stock: sp.min_stock,
+      reorder_point: sp.reorder_point,
+      safety_stock: sp.safety_stock,
+      total_stock: totalStock,
+      status: itemStatus,
+    });
+  }
+
+  const csvString = stringify(enriched, {
+    header: true,
+    columns: [
+      { key: 'code', header: 'Kode' },
+      { key: 'name', header: 'Nama' },
+      { key: 'category', header: 'Kategori' },
+      { key: 'supplier', header: 'Supplier' },
+      { key: 'price', header: 'Harga' },
+      { key: 'min_stock', header: 'Min Stok' },
+      { key: 'reorder_point', header: 'Reorder Point' },
+      { key: 'safety_stock', header: 'Safety Stock' },
+      { key: 'total_stock', header: 'Total Stok' },
+      { key: 'status', header: 'Status' },
+    ],
+  });
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="inventory-export-${Date.now()}.csv"`);
+  res.send(csvString);
+}
+
+async function bulkTransfer(data, userId) {
+  const { items, source_branch_id, destination_branch_id, notes } = data;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    const err = new Error('items wajib diisi (array of { sparepart_id, quantity })');
+    err.status = 400;
+    throw err;
+  }
+
+  if (!source_branch_id || !destination_branch_id) {
+    const err = new Error('source_branch_id dan destination_branch_id wajib diisi');
+    err.status = 400;
+    throw err;
+  }
+
+  if (source_branch_id === destination_branch_id) {
+    const err = new Error('Cabang asal dan tujuan tidak boleh sama');
+    err.status = 400;
+    throw err;
+  }
+
+  const { data: sourceBranch } = await supabase
+    .from('branches')
+    .select('id, name')
+    .eq('id', source_branch_id)
+    .single();
+  if (!sourceBranch) {
+    const err = new Error('Cabang asal tidak ditemukan');
+    err.status = 404;
+    throw err;
+  }
+
+  const { data: destBranch } = await supabase
+    .from('branches')
+    .select('id, name')
+    .eq('id', destination_branch_id)
+    .single();
+  if (!destBranch) {
+    const err = new Error('Cabang tujuan tidak ditemukan');
+    err.status = 404;
+    throw err;
+  }
+
+  for (const item of items) {
+    if (!item.sparepart_id || !item.quantity) {
+      const err = new Error('Setiap item harus memiliki sparepart_id dan quantity');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const { data: spareparts } = await supabase
+    .from('spareparts')
+    .select('id, name, code')
+    .in('id', items.map(i => i.sparepart_id));
+
+  const sparepartMap = {};
+  for (const sp of spareparts || []) {
+    sparepartMap[sp.id] = sp;
+  }
+
+  const results = [];
+
+  for (const item of items) {
+    const sp = sparepartMap[item.sparepart_id];
+    if (!sp) {
+      const err = new Error(`Sparepart ${item.sparepart_id} tidak ditemukan`);
+      err.status = 404;
+      throw err;
+    }
+
+    const qty = Math.abs(Number(item.quantity));
+    if (qty <= 0) {
+      const err = new Error(`Quantity untuk ${sp.code} harus lebih dari 0`);
+      err.status = 400;
+      throw err;
+    }
+
+    const { data: stock } = await supabase
+      .from('branch_stocks')
+      .select('quantity')
+      .eq('sparepart_id', item.sparepart_id)
+      .eq('branch_id', source_branch_id)
+      .maybeSingle();
+
+    const currentStock = stock?.quantity || 0;
+    if (currentStock < qty) {
+      const err = new Error(`Stok ${sp.code} di ${sourceBranch.name} tidak mencukupi (tersedia: ${currentStock}, diminta: ${qty})`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  for (const item of items) {
+    const sp = sparepartMap[item.sparepart_id];
+    const qty = Math.abs(Number(item.quantity));
+
+    const noteOut = notes || `Transfer bulk ke ${destBranch.name}`;
+    const noteIn = notes || `Transfer bulk dari ${sourceBranch.name}`;
+
+    const { data: outMovement, error: outErr } = await supabase
+      .from('stock_movements')
+      .insert({
+        type: 'out', sparepart_id: item.sparepart_id,
+        branch_id: source_branch_id, quantity: qty,
+        notes: noteOut, created_by: userId,
+      })
+      .select()
+      .single();
+
+    if (outErr) throw outErr;
+
+    const { data: inMovement, error: inErr } = await supabase
+      .from('stock_movements')
+      .insert({
+        type: 'in', sparepart_id: item.sparepart_id,
+        branch_id: destination_branch_id, quantity: qty,
+        notes: noteIn, created_by: userId,
+      })
+      .select()
+      .single();
+
+    if (inErr) throw inErr;
+
+    results.push({
+      sparepart_id: sp.id,
+      code: sp.code,
+      name: sp.name,
+      quantity: qty,
+      out_movement_id: outMovement.id,
+      in_movement_id: inMovement.id,
+    });
+  }
+
+  await supabase.from('activities').insert({
+    user_id: userId,
+    branch_id: source_branch_id,
+    action: 'bulk_transfer',
+    entity_type: 'stock_movement',
+    description: `Transfer bulk ${results.length} item dari ${sourceBranch.name} ke ${destBranch.name}`,
+  });
+
+  await sendNotification(userId, 'Transfer Stok Selesai',
+    `${results.length} item berhasil ditransfer dari ${sourceBranch.name} ke ${destBranch.name}`,
+    'success', '/inventory');
+  await sendNotificationToBranch(destBranch.id, 'Transfer Stok Masuk',
+    `${results.length} item diterima dari ${sourceBranch.name}`,
+    'info', '/inventory');
+
+  return {
+    source_branch: sourceBranch.name,
+    destination_branch: destBranch.name,
+    items_transferred: results.length,
+    items: results,
+  };
+}
+
+module.exports = { list, detail, create, update, adjustStock, exportCsv, bulkTransfer };

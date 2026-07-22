@@ -1,4 +1,5 @@
 const restockService = require('../services/restockService');
+const schedulerService = require('../services/schedulerService');
 const { success, error } = require('../utils/response');
 
 exports.generate = async (req, res, next) => {
@@ -74,6 +75,44 @@ exports.createPurchaseOrder = async (req, res, next) => {
       requested_by: req.user.id,
     });
     return success(res, data, 'Purchase order berhasil dibuat', null, 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.purchaseOrderDetail = async (req, res, next) => {
+  try {
+    const data = await restockService.purchaseOrderDetail(req.params.id);
+    if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
+    return success(res, data, 'OK');
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.approvePO = async (req, res, next) => {
+  try {
+    const data = await restockService.approvePurchaseOrder(req.params.id, req.user.id);
+    if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
+    return success(res, data, 'PO berhasil disetujui, stok ditambahkan');
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.schedulerStatus = async (req, res, next) => {
+  try {
+    const status = schedulerService.getStatus();
+    return success(res, status, 'OK');
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.triggerGenerate = async (req, res, next) => {
+  try {
+    const status = await schedulerService.triggerManual();
+    return success(res, status, 'Generate selesai dijalankan');
   } catch (err) {
     next(err);
   }

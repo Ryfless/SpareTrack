@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Globe, Moon, Bell, Sliders, Shield, Users, History, Info, User, Save,
   Lock, Smartphone, KeyRound, ChevronRight, Plus, Download, BarChart3,
@@ -8,14 +8,42 @@ import { Card } from "../../components/shared/Card";
 import { FormField } from "../../components/shared/FormField";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { EditProfileModal } from "../../components/modals/EditProfileModal";
+import { ManageUserModal } from "../../components/modals/ManageUserModal";
 import { inputCls } from "../../config";
 import { getSettings, updateSettings, type SettingsResponse } from "../../services/settings";
+import { getUsers, toggleUserActive } from "../../services/users";
+import type { User as UserType } from "../../services/users";
 
 export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditProfile: () => void; darkMode: boolean; setDarkMode: (v: boolean) => void }) {
   const [tab, setTab] = useState("general");
   const [settingsData, setSettingsData] = useState<SettingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [notif, setNotif] = useState({ emailKritis: true, emailRestock: true, browser: false, weekly: true });
+  const [users, setUsers] = useState<UserType[]>([]);
+  const [usersMeta, setUsersMeta] = useState({ page: 1, total: 0, total_pages: 0 });
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersPage, setUsersPage] = useState(1);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserType | null>(null);
+
+  const loadUsers = useCallback(async (page = 1) => {
+    setUsersLoading(true);
+    try {
+      const res = await getUsers({ page, limit: 20 });
+      setUsers(res.data || []);
+      if (res.meta) {
+        setUsersMeta({
+          page: Number(res.meta.page) || 1,
+          total: Number(res.meta.total) || 0,
+          total_pages: Number(res.meta.total_pages) || 0,
+        });
+      }
+    } catch {
+      toast.error("Gagal memuat data pengguna");
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -24,6 +52,10 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
       .catch(() => toast.error("Gagal memuat pengaturan"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (tab === "pengguna") loadUsers(usersPage);
+  }, [tab, usersPage, loadUsers]);
 
   function Toggle({ val, onChange }: { val: boolean; onChange: (v: boolean) => void }) {
     return <button onClick={() => onChange(!val)} className={`relative w-10 h-5 rounded-full transition-colors ${val?"bg-blue-600":"bg-slate-300 dark:bg-slate-600"}`}><div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${val?"translate-x-5":""}`} /></button>;
@@ -148,29 +180,49 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
           <Card className="p-6">
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-bold text-slate-800 dark:text-slate-200">Manajemen Pengguna</h3>
-              <button onClick={() => toast.info("Form tambah pengguna akan segera tersedia")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah User</button>
+              <button onClick={() => { setEditingUser(null); setModalOpen(true); }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah User</button>
             </div>
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">{["Nama","Email","Role","Cabang","Status",""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500">{h}</th>)}</tr></thead>
-              <tbody>{[
-                { n:"Admin Pusat", e:"admin@sparetrack.id", r:"Super Admin",   c:"Semua",    s:"Aktif"   },
-                { n:"Budi Santoso",e:"budi@sparetrack.id",  r:"Admin Cabang",  c:"Cabang A", s:"Aktif"   },
-                { n:"Sari Dewi",   e:"sari@sparetrack.id",  r:"Admin Cabang",  c:"Cabang B", s:"Aktif"   },
-                { n:"Ahmad Fauzi", e:"ahmad@sparetrack.id", r:"Admin Cabang",  c:"Cabang C", s:"Aktif"   },
-                { n:"Rina Marlina",e:"rina@sparetrack.id",  r:"Viewer",        c:"Semua",    s:"Nonaktif"},
-              ].map(u => (
-                <tr key={u.e} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30">
-                  <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">{u.n[0]}</div><span className="font-medium text-slate-700 dark:text-slate-300">{u.n}</span></div></td>
-                  <td className="px-4 py-3 text-xs text-slate-400">{u.e}</td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{u.r}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{u.c}</td>
-                  <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.s==="Aktif"?"bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700":"bg-slate-100 dark:bg-slate-700 text-slate-500"}`}>{u.s}</span></td>
-                  <td className="px-4 py-3"><button onClick={() => toast.success(`Edit ${u.n}`)} className="text-xs text-blue-600 hover:underline">Edit</button></td>
-                </tr>
-              ))}</tbody>
-            </table>
+            {usersLoading ? (
+              <div className="space-y-3">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-12" />)}</div>
+            ) : users.length === 0 ? (
+              <div className="text-center py-10 text-sm text-slate-400">Belum ada pengguna</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">{["Nama","Email","Role","Cabang","Status",""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500">{h}</th>)}</tr></thead>
+                <tbody>{users.map(u => (
+                  <tr key={u.id} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                    <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 flex items-center justify-center text-xs font-bold">{u.full_name[0]}</div><span className="font-medium text-slate-700 dark:text-slate-300">{u.full_name}</span></div></td>
+                    <td className="px-4 py-3 text-xs text-slate-400">{u.email}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{u.role === 'super_admin' ? 'Super Admin' : 'Admin Cabang'}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{u.branch || 'Semua'}</td>
+                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.is_active ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700" : "bg-slate-100 dark:bg-slate-700 text-slate-500"}`}>{u.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
+                    <td className="px-4 py-3 flex items-center gap-2">
+                      <button onClick={() => { setEditingUser(u); setModalOpen(true); }} className="text-xs text-blue-600 hover:underline">Edit</button>
+                      <button onClick={async () => {
+                        try {
+                          await toggleUserActive(u.id);
+                          toast.success(u.is_active ? 'User dinonaktifkan' : 'User diaktifkan');
+                          loadUsers(usersPage);
+                        } catch { toast.error('Gagal mengubah status user'); }
+                      }} className={`text-xs hover:underline ${u.is_active ? 'text-red-500' : 'text-emerald-600'}`}>{u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+            {usersMeta.total_pages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-xs text-slate-400">Total {usersMeta.total} pengguna</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setUsersPage(p => Math.max(1, p-1))} disabled={usersPage <= 1} className="px-3 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30">Prev</button>
+                  <span className="text-xs text-slate-500">{usersPage} / {usersMeta.total_pages}</span>
+                  <button onClick={() => setUsersPage(p => Math.min(usersMeta.total_pages, p+1))} disabled={usersPage >= usersMeta.total_pages} className="px-3 py-1 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30">Next</button>
+                </div>
+              </div>
+            )}
           </Card>
         )}
+        <ManageUserModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={() => loadUsers(usersPage)} user={editingUser} />
         {tab === "audit" && (
           <Card className="p-6">
             <div className="flex items-center justify-between mb-5">

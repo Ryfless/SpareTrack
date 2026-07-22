@@ -9,7 +9,7 @@ import { toast, Toaster } from "sonner";
 import { BRANCHES } from "./data";
 import { ROLE_CFG, NAV_SECTIONS, PAGE_TITLES } from "./config";
 import { supabase } from "./services/supabase";
-import { getMe, logout as logoutApi } from "./services/auth";
+import { logout as logoutApi } from "./services/auth";
 import { AddItemModal } from "./components/modals/AddItemModal";
 import { StokMasukModal } from "./components/modals/StokMasukModal";
 import { StokKeluarModal } from "./components/modals/StokKeluarModal";
@@ -29,6 +29,8 @@ import { BranchesPage } from "./pages/app/BranchesPage";
 import { TransactionsPage } from "./pages/app/TransactionsPage";
 import { ReportsPage } from "./pages/app/ReportsPage";
 import { SettingsPage } from "./pages/app/SettingsPage";
+import { list as fetchNotifsApi, getUnreadCount, markRead as markReadApi, markAllRead as markAllReadApi } from "./services/notifications";
+import type { NotificationItem } from "./services/notifications";
 import type { AppState, PageId, Role } from "./types";
 
 interface UserProfile {
@@ -61,6 +63,10 @@ export default function App() {
   const [stokKeluarOpen, setStokKeluarOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
 
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifLoading, setNotifLoading] = useState(false);
+
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
 
   useEffect(() => {
@@ -87,13 +93,55 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (appState !== "app") return;
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, [appState]);
+
+  useEffect(() => {
+    if (notifOpen) fetchNotifications();
+  }, [notifOpen]);
+
+  useEffect(() => {
+    if (appState !== "app" || !userProfile?.id) return;
+    const channel = supabase
+      .channel('notifications')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userProfile.id}` },
+        (payload) => {
+          const n = payload.new as NotificationItem;
+          setNotifications(prev => [n, ...prev.slice(0, 19)]);
+          setUnreadCount(prev => prev + 1);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [appState, userProfile?.id]);
+
   async function fetchProfile() {
     try {
-      const result = await getMe();
-      const profile = result.profile;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user');
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, phone, branch, role')
+        .eq('id', user.id)
+        .single();
+
       if (profile) {
-        setUserProfile(profile);
-        setCurrentRole(profile.role);
+        setUserProfile(profile as UserProfile);
+        setCurrentRole(profile.role as Role);
+      } else {
+        setUserProfile({
+          id: user.id,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
+          phone: user.user_metadata?.phone || '',
+          branch: user.user_metadata?.branch || '',
+          role: (user.user_metadata?.role as Role) || 'branch_admin',
+        });
       }
       setAppState("app");
     } catch {
@@ -126,6 +174,45 @@ export default function App() {
     }
   }
 
+  async function fetchNotifications() {
+    setNotifLoading(true);
+    try {
+      const res = await fetchNotifsApi(1, 10);
+      setNotifications(res.data);
+    } catch { /* ignore */ }
+    setNotifLoading(false);
+  }
+
+  async function fetchUnread() {
+    try {
+      const { count } = await getUnreadCount();
+      setUnreadCount(count);
+    } catch { /* ignore */ }
+  }
+
+  async function handleNotifClick(n: NotificationItem) {
+    if (n.link) {
+      navigate(n.link.replace('/', '') as PageId);
+    }
+    if (!n.is_read) {
+      try {
+        await markReadApi(n.id);
+        setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      } catch { /* ignore */ }
+    }
+    setNotifOpen(false);
+  }
+
+  async function handleMarkAllRead() {
+    try {
+      await markAllReadApi();
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+      toast.success("Semua ditandai dibaca");
+    } catch { /* ignore */ }
+  }
+
   if (appState === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -152,7 +239,7 @@ export default function App() {
       <StokMasukModal  open={stokMasukOpen}  onClose={() => setStokMasukOpen(false)}  />
       <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} />
       <TransferModal   open={transferOpen}   onClose={() => setTransferOpen(false)}   />
-      <EditProfileModal open={profileEditOpen} onClose={() => setProfileEditOpen(false)} />
+      <EditProfileModal open={profileEditOpen} onClose={() => setProfileEditOpen(false)} onSaved={() => fetchProfile()} profile={userProfile} />
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onNavigate={navigate} onAction={quickAction} />
       <DetailDrawer partId={selectedPart} onClose={() => setSelectedPart(null)} />
 
@@ -239,40 +326,50 @@ export default function App() {
             <div className="relative">
               <button onClick={() => { setNotifOpen(!notifOpen); setProfileDropOpen(false); }} className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition">
                 <Bell size={16} />
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center font-bold" style={{ fontSize:"9px" }}>3</span>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center font-bold px-1" style={{ fontSize:"9px" }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                )}
               </button>
               {notifOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                       <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">Notifikasi</span>
-                      <button onClick={() => toast.success("Semua ditandai dibaca")} className="text-xs text-blue-600 hover:underline">Tandai semua dibaca</button>
+                      {unreadCount > 0 && (
+                        <button onClick={handleMarkAllRead} className="text-xs text-blue-600 hover:underline">Tandai semua dibaca</button>
+                      )}
                     </div>
-                    <div className="text-xs text-slate-400 px-4 py-2 font-semibold uppercase tracking-wider border-b border-slate-50 dark:border-slate-800/50">Hari ini</div>
-                    {[
-                      { text:"Stok kritis: V-Belt Standard Cabang A",         time:"3 mnt lalu",  type:"danger", unread:true },
-                      { text:"Stok kritis: Bearing Roda Depan Cabang B",       time:"5 mnt lalu",  type:"danger", unread:true },
-                      { text:"Prediksi SMA diperbarui untuk semua item",       time:"1 jam lalu",  type:"info",   unread:true },
-                    ].map((n, i) => (
-                      <div key={i} className={`px-4 py-3 border-b border-slate-50 dark:border-slate-800/50 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition ${n.unread?"bg-blue-50/40 dark:bg-blue-900/10":""}`}>
-                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.type==="danger"?"bg-red-500":"bg-blue-500"}`} />
-                        <div className="flex-1 min-w-0"><p className="text-xs text-slate-700 dark:text-slate-300 leading-snug">{n.text}</p><p className="text-xs text-slate-400 mt-0.5">{n.time}</p></div>
-                        {n.unread && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0" />}
+                    {notifLoading ? (
+                      <div className="px-4 py-8 text-center text-xs text-slate-400">Memuat...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-xs text-slate-400">Belum ada notifikasi</div>
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto">
+                        {notifications.map(n => {
+                          const typeColor = n.type === 'warning' ? 'bg-amber-500' : n.type === 'success' ? 'bg-emerald-500' : n.type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+                          return (
+                            <div key={n.id} onClick={() => handleNotifClick(n)}
+                              className={`px-4 py-3 border-b border-slate-50 dark:border-slate-800/50 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition ${!n.is_read ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''}`}>
+                              <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${typeColor}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-slate-800 dark:text-slate-200">{n.title}</p>
+                                <p className="text-xs text-slate-500 mt-0.5 leading-snug">{n.message}</p>
+                                <p className="text-xs text-slate-400 mt-1">{new Date(n.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                              </div>
+                              {!n.is_read && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0" />}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                    <div className="text-xs text-slate-400 px-4 py-2 font-semibold uppercase tracking-wider border-b border-slate-50 dark:border-slate-800/50">Kemarin</div>
-                    <div className="px-4 py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer transition">
-                      <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-emerald-500" />
-                      <div><p className="text-xs text-slate-700 dark:text-slate-300">PO #045 disetujui Admin Pusat</p><p className="text-xs text-slate-400 mt-0.5">kemarin 16:30</p></div>
-                    </div>
+                    )}
                   </div>
                 </>
               )}
             </div>
             {/* Profile */}
             <div className="relative">
-              <button onClick={() => { setProfileDropOpen(!profileDropOpen); setNotifOpen(false); }} className="w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-xs font-bold text-white hover:bg-blue-800 transition">A</button>
+              <button onClick={() => { setProfileDropOpen(!profileDropOpen); setNotifOpen(false); }} className="w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-xs font-bold text-white hover:bg-blue-800 transition">{userProfile?.full_name?.charAt(0) || 'A'}</button>
               {profileDropOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setProfileDropOpen(false)} />

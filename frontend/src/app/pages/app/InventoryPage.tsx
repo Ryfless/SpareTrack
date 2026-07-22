@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Package, Search, Sliders, Plus, Download, Activity, Tag,
-  X, Eye, PackageSearch, ChevronLeft, ChevronRight,
+  X, Eye, PackageSearch, ChevronLeft, ChevronRight, ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
@@ -9,7 +9,8 @@ import { StatusBadge } from "../../components/shared/StatusBadge";
 import { EmptyState } from "../../components/shared/EmptyState";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { AddItemModal } from "../../components/modals/AddItemModal";
-import { list as fetchInventory, type SparepartListItem } from "../../services/inventory";
+import { BulkTransferModal } from "../../components/modals/BulkTransferModal";
+import { list as fetchInventory, exportCsv, type SparepartListItem } from "../../services/inventory";
 import { getCategories, getSuppliers } from "../../services/references";
 import type { ApiResponse } from "../../services/client";
 
@@ -28,6 +29,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
   const [filterOpen, setFilterOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -106,6 +108,14 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
   return (
     <div className="space-y-4">
       <AddItemModal open={addOpen} onClose={() => setAddOpen(false)} />
+      {selected.size > 0 && (
+        <BulkTransferModal
+          open={bulkTransferOpen}
+          onClose={() => setBulkTransferOpen(false)}
+          onSuccess={loadData}
+          selectedItems={items.filter(i => selected.has(i.id))}
+        />
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {statusFilters.map(s => (
           <Card key={s.f} className={`p-4 text-center transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer ${filterStatus === s.f ? "ring-2 ring-blue-500" : ""}`} onClick={() => { setFilterStatus(s.f); setPage(1); }}>
@@ -117,7 +127,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
       {selected.size > 0 && (
         <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
           <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">{selected.size} item dipilih</span>
-          <span className="text-xs text-blue-500">(Fitur bulk akan segera tersedia)</span>
+          <button onClick={() => setBulkTransferOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><ArrowLeftRight size={13} />Transfer Stok</button>
           <button onClick={() => setSelected(new Set())} className="ml-auto p-1.5 text-slate-400 hover:text-slate-600"><X size={14} /></button>
         </div>
       )}
@@ -131,6 +141,25 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
             <Sliders size={13} />Filter{(filterStatus !== "all" || filterCat !== "all" || filterSup !== "all") && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
           </button>
           <button onClick={() => setAddOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah Item</button>
+          <button onClick={async () => {
+            try {
+              const blob = await exportCsv({
+                search: debouncedSearch || undefined,
+                status: filterStatus !== "all" ? filterStatus : undefined,
+                category_id: filterCat !== "all" ? filterCat : undefined,
+                supplier_id: filterSup !== "all" ? filterSup : undefined,
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `inventory-export-${Date.now()}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success("CSV berhasil diexport");
+            } catch {
+              toast.error("Gagal export CSV");
+            }
+          }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 active:scale-95 rounded-lg transition-all"><Download size={13} />Export CSV</button>
         </div>
         {filterOpen && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">

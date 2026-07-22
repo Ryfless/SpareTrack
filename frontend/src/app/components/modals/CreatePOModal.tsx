@@ -8,7 +8,13 @@ import { createPurchaseOrder } from "../../services/restock";
 import type { RestockRecommendation } from "../../services/restock";
 import { inputCls } from "../../config";
 
-export function CreatePOModal({ item, onClose }: { item: RestockRecommendation | null; onClose: () => void }) {
+interface CreatePOModalProps {
+  item: RestockRecommendation | null;
+  onClose: () => void;
+  onCreated?: (poId: string) => void;
+}
+
+export function CreatePOModal({ item, onClose, onCreated }: CreatePOModalProps) {
   const [qty, setQty] = useState(item?.recommended_qty.toString() ?? "");
   const [supplierId, setSupplierId] = useState("");
   const [target, setTarget] = useState("");
@@ -34,7 +40,7 @@ export function CreatePOModal({ item, onClose }: { item: RestockRecommendation |
     if (!qty || !supplierId || !target) { toast.error("Lengkapi data (supplier, jumlah, target)"); return; }
     setSubmitting(true);
     try {
-      await createPurchaseOrder({
+      const po = await createPurchaseOrder({
         supplier_id: supplierId,
         branch_id: item.branch_id,
         notes: `Restock ${item.name} — target tiba ${target}`,
@@ -43,6 +49,7 @@ export function CreatePOModal({ item, onClose }: { item: RestockRecommendation |
       });
       toast.success(`PO Restock ${item.name} dibuat`);
       onClose();
+      if (onCreated) onCreated(po.id);
     } catch { toast.error("Gagal membuat PO"); }
     finally { setSubmitting(false); }
   }

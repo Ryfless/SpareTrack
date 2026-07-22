@@ -51,3 +51,20 @@ exports.adjustStock = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.exportCsv = async (req, res, next) => {
+  try {
+    await inventoryService.exportCsv(req.query, res);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.bulkTransfer = async (req, res, next) => {
+  try {
+    const data = await inventoryService.bulkTransfer(req.body, req.user.id);
+    return success(res, data, `${data.items_transferred} item berhasil ditransfer`, null, 201);
+  } catch (err) {
+    next(err);
+  }
+};
