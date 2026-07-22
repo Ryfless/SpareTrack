@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { ArrowDownRight, Loader2 } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { ArrowDownRight, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
 import { FormField } from "../shared/FormField";
@@ -7,8 +7,9 @@ import { list as fetchInventory } from "../../services/inventory";
 import { list as fetchBranches } from "../../services/branches";
 import { create as createTransaction } from "../../services/transactions";
 import { inputCls } from "../../config";
+import type { SparepartDetail } from "../../services/inventory";
 
-export function StokMasukModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function StokMasukModal({ open, onClose, sparepart }: { open: boolean; onClose: () => void; sparepart?: SparepartDetail }) {
   const [form, setForm] = useState({ sparepart_id: "", branch_id: "", jumlah: "", catatan: "" });
   const [spareparts, setSpareparts] = useState<Array<{ id: string; name: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
@@ -17,15 +18,21 @@ export function StokMasukModal({ open, onClose }: { open: boolean; onClose: () =
 
   useEffect(() => {
     if (!open) return;
+    setForm({ sparepart_id: sparepart?.id ?? "", branch_id: "", jumlah: "", catatan: "" });
     setLoading(true);
     Promise.all([
-      fetchInventory({ limit: 200 }).then(r => setSpareparts((r.data || []).map(s => ({ id: s.id, name: s.name })))),
+      !sparepart ? fetchInventory({ limit: 200 }).then(r => setSpareparts((r.data || []).map(s => ({ id: s.id, name: s.name })))) : Promise.resolve(),
       fetchBranches().then(setBranches),
     ]).catch(() => toast.error("Gagal memuat data"))
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [open, sparepart]);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const selectedBranchStock = useMemo(() => {
+    if (!sparepart || !form.branch_id) return null;
+    return sparepart.stock_by_branch.find(b => b.branch_id === form.branch_id) ?? null;
+  }, [sparepart, form.branch_id]);
 
   async function submit() {
     if (!form.sparepart_id || !form.branch_id || !form.jumlah) { toast.error("Lengkapi data"); return; }
@@ -33,7 +40,6 @@ export function StokMasukModal({ open, onClose }: { open: boolean; onClose: () =
     try {
       await createTransaction({ type: 'in', sparepart_id: form.sparepart_id, branch_id: form.branch_id, quantity: Number(form.jumlah), notes: form.catatan });
       toast.success('Stok masuk berhasil dicatat');
-      setForm({ sparepart_id: "", branch_id: "", jumlah: "", catatan: "" });
       onClose();
     } catch { toast.error("Gagal mencatat stok masuk"); }
     finally { setSubmitting(false); }
@@ -42,14 +48,28 @@ export function StokMasukModal({ open, onClose }: { open: boolean; onClose: () =
   return (
     <Modal open={open} onClose={onClose} title="Catat Stok Masuk" size="sm">
       <div className="space-y-4">
-        <FormField label="Sparepart" required>
-          {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
-            : <select value={form.sparepart_id} onChange={set("sparepart_id")} className={inputCls}><option value="">Pilih sparepart</option>{spareparts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
-        </FormField>
+        {sparepart ? (
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
+            <div className="text-xs font-semibold text-blue-700 dark:text-blue-400">{sparepart.name}</div>
+            <div className="text-xs text-slate-500 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{sparepart.code}</div>
+          </div>
+        ) : (
+          <FormField label="Sparepart" required>
+            {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
+              : <select value={form.sparepart_id} onChange={set("sparepart_id")} className={inputCls}><option value="">Pilih sparepart</option>{spareparts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
+          </FormField>
+        )}
         <FormField label="Cabang" required>
           {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
             : <select value={form.branch_id} onChange={set("branch_id")} className={inputCls}><option value="">Pilih cabang</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
         </FormField>
+        {selectedBranchStock !== null && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 text-xs">
+            <Info size={12} className="text-blue-500 shrink-0" />
+            <span className="text-slate-500">Stok saat ini di {selectedBranchStock.branch_name}:</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">{selectedBranchStock.quantity}</span>
+          </div>
+        )}
         <FormField label="Jumlah" required><input value={form.jumlah} onChange={set("jumlah")} type="number" min="1" placeholder="0" className={inputCls} /></FormField>
         <FormField label="Catatan"><textarea value={form.catatan} onChange={set("catatan")} rows={2} className={`${inputCls} resize-none`} /></FormField>
       </div>

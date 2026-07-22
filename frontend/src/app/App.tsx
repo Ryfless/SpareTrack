@@ -399,7 +399,7 @@ export default function App() {
         {/* CONTENT */}
         <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
           {page === "dashboard"    && !selectedPart && <DashboardPage onNavigate={navigate} onAction={quickAction} />}
-          {page === "inventory"    && !selectedPart && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} />}
+          {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} />}
           {page === "restock"      && !selectedPart && <RestockPage />}
           {page === "branches"     && !selectedPart && <BranchesPage />}
           {page === "transactions" && !selectedPart && <TransactionsPage />}

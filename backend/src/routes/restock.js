@@ -3,7 +3,7 @@ const {
   generate, summary, recommendations, detailRecommendation,
   approveRecommendation, rejectRecommendation,
   purchaseOrders, createPurchaseOrder,
-  purchaseOrderDetail, approvePO,
+  purchaseOrderDetail, approvePO, receivePO, cancelPO,
   schedulerStatus, triggerGenerate,
 } = require('../controllers/restockController');
 const { authenticate, authorize } = require('../middlewares/auth');
@@ -20,6 +20,8 @@ router.get('/purchase-orders', authenticate, purchaseOrders);
 router.post('/purchase-orders', authenticate, authorize('super_admin'), createPurchaseOrder);
 router.get('/purchase-orders/:id', authenticate, purchaseOrderDetail);
 router.post('/purchase-orders/:id/approve', authenticate, authorize('super_admin'), approvePO);
+router.post('/purchase-orders/:id/receive', authenticate, authorize('super_admin'), receivePO);
+router.delete('/purchase-orders/:id', authenticate, authorize('super_admin'), cancelPO);
 router.get('/scheduler/status', authenticate, authorize('super_admin'), schedulerStatus);
 router.post('/scheduler/trigger', authenticate, authorize('super_admin'), triggerGenerate);
 

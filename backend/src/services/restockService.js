@@ -481,13 +481,61 @@ async function purchaseOrderDetail(poId) {
 async function approvePurchaseOrder(poId, userId, ip_address = '') {
   const { data: po, error } = await supabase
     .from('purchase_orders')
-    .select('*, purchase_order_items(*, spareparts(name, code))')
+    .select('*')
     .eq('id', poId)
     .single();
 
   if (error || !po) return null;
   if (po.status !== 'pending') {
     const err = new Error('PO sudah diproses sebelumnya');
+    err.status = 400;
+    throw err;
+  }
+
+  await supabase
+    .from('purchase_orders')
+    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .eq('id', poId);
+
+  await supabase.from('activities').insert({
+    user_id: userId,
+    branch_id: po.branch_id,
+    action: 'approve_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    description: `Menyetujui PO ${po.po_number}`,
+  });
+
+  await supabase.from('audit_logs').insert({
+    user_id: userId,
+    action: 'approve_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    old_data: { status: 'pending' },
+    new_data: { status: 'approved' },
+    ip_address,
+  });
+
+  try {
+    const { sendNotification } = require('./notificationService');
+    await sendNotification(po.requested_by, 'PO Disetujui',
+      `PO ${po.po_number} telah disetujui — menunggu penerimaan barang`,
+      'success', '/restock');
+  } catch {}
+
+  return { id: poId, status: 'approved' };
+}
+
+async function receivePurchaseOrder(poId, userId, ip_address = '') {
+  const { data: po, error } = await supabase
+    .from('purchase_orders')
+    .select('*, purchase_order_items(*, spareparts(name, code))')
+    .eq('id', poId)
+    .single();
+
+  if (error || !po) return null;
+  if (po.status !== 'approved') {
+    const err = new Error('PO harus berstatus approved untuk diterima');
     err.status = 400;
     throw err;
   }
@@ -533,43 +581,97 @@ async function approvePurchaseOrder(poId, userId, ip_address = '') {
       .eq('id', item.id);
   }
 
+  if (!po.total_amount || po.total_amount === 0) {
+    const total = items.reduce((sum, i) => sum + Number(i.quantity) * Number(i.unit_price), 0);
+    await supabase.from('purchase_orders').update({ total_amount: total }).eq('id', poId);
+  }
+
   await supabase
     .from('purchase_orders')
-    .update({ status: 'approved', approved_at: new Date().toISOString() })
+    .update({ status: 'received', received_at: new Date().toISOString() })
     .eq('id', poId);
 
   await supabase.from('activities').insert({
     user_id: userId,
     branch_id: po.branch_id,
-    action: 'approve_po',
+    action: 'receive_po',
     entity_type: 'purchase_order',
     entity_id: poId,
-    description: `Menyetujui PO ${po.po_number} — ${items.length} item masuk stok`,
+    description: `Menerima PO ${po.po_number} — ${items.length} item masuk stok`,
   });
 
   await supabase.from('audit_logs').insert({
     user_id: userId,
-    action: 'approve_po',
+    action: 'receive_po',
     entity_type: 'purchase_order',
     entity_id: poId,
-    old_data: { status: 'pending' },
-    new_data: { status: 'approved' },
+    old_data: { status: 'approved' },
+    new_data: { status: 'received', received_at: new Date().toISOString() },
     ip_address,
   });
 
   try {
     const { sendNotification } = require('./notificationService');
-    await sendNotification(po.requested_by, 'PO Disetujui',
-      `PO ${po.po_number} telah disetujui — ${items.length} item masuk stok`,
+    await sendNotification(po.requested_by, 'PO Diterima',
+      `PO ${po.po_number} telah diterima — ${items.length} item masuk stok`,
       'success', '/restock');
   } catch {}
 
-  return { id: poId, status: 'approved', items_processed: items.length };
+  return { id: poId, status: 'received', items_processed: items.length };
+}
+
+async function cancelPurchaseOrder(poId, userId, ip_address = '') {
+  const { data: po, error } = await supabase
+    .from('purchase_orders')
+    .select('*')
+    .eq('id', poId)
+    .single();
+
+  if (error || !po) return null;
+  if (po.status !== 'pending') {
+    const err = new Error('Hanya PO dengan status pending yang dapat dibatalkan');
+    err.status = 400;
+    throw err;
+  }
+
+  await supabase
+    .from('purchase_orders')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('id', poId);
+
+  if (po.recommendation_id) {
+    await supabase
+      .from('restock_recommendations')
+      .update({ status: 'pending', updated_at: new Date().toISOString() })
+      .eq('id', po.recommendation_id);
+  }
+
+  await supabase.from('activities').insert({
+    user_id: userId,
+    branch_id: po.branch_id,
+    action: 'cancel_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    description: `Membatalkan PO ${po.po_number}`,
+  });
+
+  await supabase.from('audit_logs').insert({
+    user_id: userId,
+    action: 'cancel_po',
+    entity_type: 'purchase_order',
+    entity_id: poId,
+    old_data: { status: 'pending' },
+    new_data: { status: 'cancelled' },
+    ip_address,
+  });
+
+  return { id: poId, status: 'cancelled' };
 }
 
 module.exports = {
   generate, summary, recommendations, detailRecommendation,
   approveRecommendation, rejectRecommendation,
   purchaseOrders, createPurchaseOrder,
-  purchaseOrderDetail, approvePurchaseOrder,
+  purchaseOrderDetail, approvePurchaseOrder, receivePurchaseOrder,
+  cancelPurchaseOrder,
 };

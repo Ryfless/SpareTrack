@@ -31,8 +31,8 @@ export function DetailDrawer({ partId, onClose }: { partId: string | null; onClo
   return (
     <>
       {partId && <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} style={{ backdropFilter: "blur(2px)" }} />}
-      <StokMasukModal open={stokMasukOpen} onClose={() => setStokMasukOpen(false)} />
-      <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} />
+      <StokMasukModal open={stokMasukOpen} onClose={() => setStokMasukOpen(false)} sparepart={part ?? undefined} />
+      <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} sparepart={part ?? undefined} />
       <div className={`fixed top-0 right-0 h-full w-96 max-w-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 z-50 flex flex-col shadow-2xl transition-transform duration-300 ${partId ? "translate-x-0" : "translate-x-full"}`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{part?.name ?? (loading ? "Memuat..." : "Detail Sparepart")}</div>

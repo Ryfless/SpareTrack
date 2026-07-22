@@ -95,7 +95,27 @@ exports.approvePO = async (req, res, next) => {
   try {
     const data = await restockService.approvePurchaseOrder(req.params.id, req.user.id, getClientIp(req));
     if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
-    return success(res, data, 'PO berhasil disetujui, stok ditambahkan');
+    return success(res, data, 'PO berhasil disetujui');
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.cancelPO = async (req, res, next) => {
+  try {
+    const data = await restockService.cancelPurchaseOrder(req.params.id, req.user.id, getClientIp(req));
+    if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
+    return success(res, data, 'PO berhasil dibatalkan');
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.receivePO = async (req, res, next) => {
+  try {
+    const data = await restockService.receivePurchaseOrder(req.params.id, req.user.id, getClientIp(req));
+    if (!data) return error(res, 'Purchase order tidak ditemukan', null, 404);
+    return success(res, data, 'PO berhasil diterima, stok ditambahkan');
   } catch (err) {
     next(err);
   }

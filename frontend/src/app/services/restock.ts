@@ -107,7 +107,17 @@ export async function getPurchaseOrderDetail(id: string): Promise<PurchaseOrderD
   return response.data;
 }
 
-export async function approvePurchaseOrder(id: string): Promise<{ status: string; items_processed: number }> {
-  const response = await api.post<{ status: string; items_processed: number }>(`/restock/purchase-orders/${id}/approve`);
+export async function approvePurchaseOrder(id: string): Promise<{ status: string }> {
+  const response = await api.post<{ status: string }>(`/restock/purchase-orders/${id}/approve`);
+  return response.data;
+}
+
+export async function receivePurchaseOrder(id: string): Promise<{ status: string; items_processed: number }> {
+  const response = await api.post<{ status: string; items_processed: number }>(`/restock/purchase-orders/${id}/receive`);
+  return response.data;
+}
+
+export async function cancelPurchaseOrder(id: string): Promise<{ status: string }> {
+  const response = await api.delete<{ status: string }>(`/restock/purchase-orders/${id}`);
   return response.data;
 }
