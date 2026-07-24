@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Package, BarChart3, AlertTriangle, ShoppingCart, Zap, Layers, Building2, Target,
-  Plus, ArrowDownRight, Activity, Truck, Users,
+  Plus, ArrowDownRight, Activity, Truck,
   ChevronRight, MapPin, AlertCircle, Clock, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import type { PageId } from "../../types";
 
 export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId, f?: string) => void; onAction: (a: string) => void }) {
   const [loading, setLoading] = useState(true);
-  const [kpi, setKpi] = useState({ total_spareparts: 0, total_branches: 0, total_stock: 0, total_value: 0, critical_stock: 0, low_stock: 0 });
+  const [kpi, setKpi] = useState({ total_spareparts: 0, total_branches: 0, total_stock: 0, total_value: 0, critical_stock: 0, low_stock: 0, overstock: 0, safe: 0 });
   const [activities, setActivities] = useState<Array<{ id: string; description: string; action: string; created_at: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string; city: string }>>([]);
   const [forecastData, setForecastData] = useState<Array<{ month: string; predicted_quantity: number }>>([]);
@@ -60,8 +60,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
 
   useAutoRefresh(loadData, 60 * 1000, true);
 
-  const safe = kpi.total_spareparts - kpi.low_stock - kpi.critical_stock;
-  const overstock = Math.max(0, kpi.total_spareparts - safe - kpi.low_stock - kpi.critical_stock);
+  const kondisiTotal = kpi.safe + kpi.low_stock + kpi.critical_stock + kpi.overstock;
 
   const actionAlerts = [
     { icon: AlertCircle, label: "Stok Kritis", count: kpi.critical_stock, cls: "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600", desc: "perlu restock segera", page: "restock" as PageId },
@@ -75,8 +74,6 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
     { icon: ArrowDownRight, label: "Stok Masuk", action: "stok_masuk", cls: "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 hover:bg-emerald-100 border-emerald-100" },
     { icon: Activity, label: "Transfer Stok", action: "transfer", cls: "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 hover:bg-indigo-100 border-indigo-100" },
     { icon: Truck, label: "Purchase Request", action: "po", cls: "bg-orange-50 dark:bg-orange-900/20 text-orange-700 hover:bg-orange-100 border-orange-100" },
-    { icon: Users, label: "Tambah Supplier", action: "supplier", cls: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 hover:bg-purple-100 border-purple-100" },
-    { icon: Building2, label: "Tambah Cabang", action: "branch", cls: "bg-teal-50 dark:bg-teal-900/20 text-teal-700 hover:bg-teal-100 border-teal-100" },
   ];
 
   if (loading) {
@@ -119,7 +116,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
       {/* Quick Actions */}
       <Card className="p-4">
         <div className="text-xs font-semibold text-slate-400 dark:text-slate-500 mb-3">Quick Actions</div>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {quickActions.map(a => (
             <button key={a.label} onClick={() => onAction(a.action)} className={`flex flex-col items-center gap-2 p-3 rounded-xl border ${a.cls} transition-all active:scale-95`}>
               <a.icon size={18} /><span className="text-xs font-medium leading-tight text-center">{a.label}</span>
@@ -152,16 +149,15 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
           <Card className="p-5">
             <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4">Kondisi Inventori</div>
             <div className="space-y-3">
-              {[{ label: "Aman", count: safe, color: "bg-emerald-500", f: "safe" },
+              {[{ label: "Aman", count: kpi.safe, color: "bg-emerald-500", f: "safe" },
                 { label: "Menipis", count: kpi.low_stock, color: "bg-amber-400", f: "low" },
                 { label: "Kritis", count: kpi.critical_stock, color: "bg-red-500", f: "critical" },
-                { label: "Overstock", count: overstock, color: "bg-purple-500", f: "overstock" },
+                { label: "Overstock", count: kpi.overstock, color: "bg-purple-500", f: "overstock" },
               ].filter(i => i.count > 0).map(item => {
-                const total = kpi.total_spareparts || 1;
                 return (
                   <div key={item.label} className="cursor-pointer group" onClick={() => onNavigate("inventory", item.f)}>
-                    <div className="flex justify-between text-xs mb-1"><span className="text-slate-600 dark:text-slate-400 group-hover:text-blue-600 transition-colors font-medium">{item.label}</span><span className="font-semibold text-slate-700 dark:text-slate-300">{item.count}/{kpi.total_spareparts}</span></div>
-                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${item.color}`} style={{ width: `${(item.count / total) * 100}%` }} /></div>
+                    <div className="flex justify-between text-xs mb-1"><span className="text-slate-600 dark:text-slate-400 group-hover:text-blue-600 transition-colors font-medium">{item.label}</span><span className="font-semibold text-slate-700 dark:text-slate-300">{item.count}</span></div>
+                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${item.color}`} style={{ width: `${(item.count / (kondisiTotal || 1)) * 100}%` }} /></div>
                   </div>
                 );
               })}

@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const {
   generate, summary, recommendations, detailRecommendation,
-  approveRecommendation, rejectRecommendation,
+  approveRecommendation, rejectRecommendation, postponeRecommendation,
   purchaseOrders, createPurchaseOrder,
   purchaseOrderDetail, approvePO, receivePO, cancelPO,
   schedulerStatus, triggerGenerate,
@@ -16,6 +16,7 @@ router.get('/recommendations', authenticate, recommendations);
 router.get('/recommendations/:id', authenticate, detailRecommendation);
 router.post('/recommendations/:id/approve', authenticate, authorize('super_admin'), approveRecommendation);
 router.post('/recommendations/:id/reject', authenticate, authorize('super_admin'), rejectRecommendation);
+router.post('/recommendations/:id/postpone', authenticate, postponeRecommendation);
 router.get('/purchase-orders', authenticate, purchaseOrders);
 router.post('/purchase-orders', authenticate, authorize('super_admin'), createPurchaseOrder);
 router.get('/purchase-orders/:id', authenticate, purchaseOrderDetail);

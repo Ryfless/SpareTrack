@@ -18,6 +18,8 @@ export interface RestockRecommendation {
   urgency: string;
   status: string;
   notes: string;
+  postpone_reason: string;
+  postpone_until: string | null;
   days_to_stockout: number;
   created_at: string;
 }
@@ -31,6 +33,14 @@ export interface RestockQuery {
 
 export async function getRecommendations(query: RestockQuery = {}): Promise<RestockRecommendation[]> {
   const response = await api.get<RestockRecommendation[]>('/restock/recommendations', query as Record<string, string | number | undefined>);
+  return response.data;
+}
+
+export async function postponeRecommendation(id: string, postpone_reason?: string, postpone_until?: string): Promise<RestockRecommendation> {
+  const body: Record<string, string> = {};
+  if (postpone_reason) body.postpone_reason = postpone_reason;
+  if (postpone_until) body.postpone_until = postpone_until;
+  const response = await api.post<RestockRecommendation>(`/restock/recommendations/${id}/postpone`, body);
   return response.data;
 }
 

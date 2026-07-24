@@ -199,11 +199,11 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
               <th className="px-4 py-3 w-8"><input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleAll} className="rounded" /></th>
-              {["Kode", "Nama Sparepart", "Kategori", "Stok A", "Stok B", "Stok C", "Total", "Min Stok", "Status", ""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{h}</th>)}
+              {["Kode", "Nama Sparepart", "Kategori", "Stok A", "Stok B", "Stok C", "Total", "Min Stok", "Max Stok", "Status", ""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody>
               {items.length === 0
-                ? <tr><td colSpan={10}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
+                ? <tr><td colSpan={11}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
                 : items.map(part => {
                     const stockA = part.stock_by_branch[0]?.quantity || 0;
                     const stockB = part.stock_by_branch[1]?.quantity || 0;
@@ -219,6 +219,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
                         <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{stockC}</td>
                         <td className="px-4 py-3 text-center font-semibold text-slate-800 dark:text-slate-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.total_stock}</td>
                         <td className="px-4 py-3 text-center text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.min_stock}</td>
+                        <td className="px-4 py-3 text-center text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.max_stock ?? '-'}</td>
                         <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
                         <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
                       </tr>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
@@ -40,8 +40,24 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
       .finally(() => setLoading(false));
   }, [open, sparepartId]);
 
+  const toastThrottle = useRef(0);
+  const MAX_LEN: Record<string, number> = { name: 20 };
+  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365, min_stock: 999999, max_stock: 999999, reorder_point: 999999, safety_stock: 999999 };
+
+  function throttledToast(msg: string) {
+    const now = Date.now();
+    if (now - toastThrottle.current > 3000) { toastThrottle.current = now; toast.error(msg); }
+  }
+
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm(f => ({ ...f, [k]: e.target.value }));
+    const val = e.target.value;
+    if (k in MAX_LEN && val.length > MAX_LEN[k]) { throttledToast(`Maksimal ${MAX_LEN[k]} karakter`); return; }
+    if (k in NUM_MAX && val !== '') {
+      const num = Number(val);
+      if (isNaN(num)) { throttledToast("Input tidak valid"); return; }
+      if (num > NUM_MAX[k]) { throttledToast(`Maksimal ${Number(NUM_MAX[k]).toLocaleString('id-ID')}`); return; }
+    }
+    setForm(f => ({ ...f, [k]: val }));
   };
 
   async function submit() {
@@ -80,7 +96,7 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
         <>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Nama Sparepart" required>
-              <input value={form.name} onChange={set("name")} maxLength={100} placeholder="Nama lengkap sparepart" className={inputCls} />
+              <input value={form.name} onChange={set("name")} placeholder="Nama lengkap sparepart" className={inputCls} />
               <p className="text-[10px] text-slate-400 mt-0.5">Nama display untuk sparepart, maksimal 100 karakter</p>
             </FormField>
             <FormField label="Kategori" required>

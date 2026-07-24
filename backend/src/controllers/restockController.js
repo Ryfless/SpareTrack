@@ -60,6 +60,17 @@ exports.rejectRecommendation = async (req, res, next) => {
   }
 };
 
+exports.postponeRecommendation = async (req, res, next) => {
+  try {
+    const data = await restockService.postponeRecommendation(req.params.id, req.user.id, getClientIp(req), req.body.postpone_reason, req.body.postpone_until);
+    if (!data) return error(res, 'Rekomendasi tidak ditemukan', null, 404);
+    const msg = data.status === 'postponed' ? 'Rekomendasi ditunda' : 'Rekomendasi diaktifkan kembali';
+    return success(res, data, msg);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.purchaseOrders = async (req, res, next) => {
   try {
     const result = await restockService.purchaseOrders(req.query);

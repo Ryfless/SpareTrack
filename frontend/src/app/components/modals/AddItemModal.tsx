@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
@@ -24,7 +24,25 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
       .finally(() => setLoading(false));
   }, [open]);
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const toastThrottle = useRef(0);
+  const MAX_LEN: Record<string, number> = { code: 20, name: 20 };
+  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365, min_stock: 999999, reorder_point: 999999, safety_stock: 999999 };
+
+  function throttledToast(msg: string) {
+    const now = Date.now();
+    if (now - toastThrottle.current > 3000) { toastThrottle.current = now; toast.error(msg); }
+  }
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (k in MAX_LEN && val.length > MAX_LEN[k]) { throttledToast(`Maksimal ${MAX_LEN[k]} karakter`); return; }
+    if (k in NUM_MAX && val !== '') {
+      const num = Number(val);
+      if (isNaN(num)) { throttledToast("Input tidak valid"); return; }
+      if (num > NUM_MAX[k]) { throttledToast(`Maksimal ${Number(NUM_MAX[k]).toLocaleString('id-ID')}`); return; }
+    }
+    setForm(f => ({ ...f, [k]: val }));
+  };
 
   async function submit() {
     if (!form.name || !form.code || !form.category_id) { toast.error("Kode, nama, dan kategori wajib diisi"); return; }
@@ -62,11 +80,11 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
           {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
             : <select value={form.supplier_id} onChange={set("supplier_id")} className={inputCls}><option value="">Pilih supplier</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
         </FormField>
-        <FormField label="Harga (Rp)"><input value={form.price} onChange={set("price")} type="number" placeholder="0" className={inputCls} /></FormField>
-        <FormField label="Lead Time (hari)"><input value={form.lead_time} onChange={set("lead_time")} type="number" placeholder="0" className={inputCls} /></FormField>
-        <FormField label="Min. Stok"><input value={form.min_stock} onChange={set("min_stock")} type="number" className={inputCls} /></FormField>
-        <FormField label="Reorder Point"><input value={form.reorder_point} onChange={set("reorder_point")} type="number" className={inputCls} /></FormField>
-        <FormField label="Safety Stock"><input value={form.safety_stock} onChange={set("safety_stock")} type="number" className={inputCls} /></FormField>
+        <FormField label="Harga (Rp)"><input value={form.price} onChange={set("price")} type="number" min="0" max="999999999" placeholder="0" className={inputCls} /></FormField>
+        <FormField label="Lead Time (hari)"><input value={form.lead_time} onChange={set("lead_time")} type="number" min="0" max="365" placeholder="0" className={inputCls} /></FormField>
+        <FormField label="Min. Stok"><input value={form.min_stock} onChange={set("min_stock")} type="number" min="0" max="999999" className={inputCls} /></FormField>
+        <FormField label="Reorder Point"><input value={form.reorder_point} onChange={set("reorder_point")} type="number" min="0" max="999999" className={inputCls} /></FormField>
+        <FormField label="Safety Stock"><input value={form.safety_stock} onChange={set("safety_stock")} type="number" min="0" max="999999" className={inputCls} /></FormField>
       </div>
       <div className="flex gap-3 mt-5">
         <button onClick={submit} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70">

@@ -5,73 +5,79 @@ async function getSummary(userId) {
   const userRole = user?.user_metadata?.role || 'branch_admin';
   const userBranch = user?.user_metadata?.branch || '';
 
-  let branchFilter = '';
+  let branchId = null;
   if (userRole === 'branch_admin' && userBranch) {
-    branchFilter = userBranch;
+    const { data: b } = await supabase.from('branches').select('id').eq('name', userBranch).single();
+    if (b) branchId = b.id;
   }
 
-  const totalSpareparts = await supabase.from('spareparts').select('id', { count: 'exact', head: true });
-  const totalBranches = await supabase.from('branches').select('id', { count: 'exact', head: true });
+  const [totalSpareparts, totalBranches] = await Promise.all([
+    supabase.from('spareparts').select('id', { count: 'exact', head: true }).eq('is_active', true),
+    supabase.from('branches').select('id', { count: 'exact', head: true }),
+  ]);
 
-  let stockQuery = supabase.from('branch_stocks').select('quantity');
-  if (branchFilter) {
-    const { data: branch } = await supabase.from('branches').select('id').eq('name', branchFilter).single();
-    if (branch) stockQuery = stockQuery.eq('branch_id', branch.id);
-  }
-  const { data: allStocks } = await stockQuery;
-  const totalStock = allStocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+  let [spResult, bsResult] = await Promise.all([
+    supabase.from('spareparts').select('id, max_stock, min_stock, safety_stock, reorder_point, price').eq('is_active', true),
+    branchId
+      ? supabase.from('branch_stocks').select('quantity, sparepart_id').eq('branch_id', branchId)
+      : supabase.from('branch_stocks').select('quantity, sparepart_id'),
+  ]);
 
-  const { data: lowStockItems } = await supabase
-    .from('spareparts')
-    .select('id, name, code, min_stock, safety_stock')
-    .lt('safety_stock', 10);
+  const spareparts = spResult.data || [];
+  const branchStocks = bsResult.data || [];
 
-  const { data: criticalStocks } = await supabase
-    .from('branch_stocks')
-    .select('quantity, spareparts!inner(safety_stock)')
-    .lte('quantity', 0);
-
-  const { data: lowCriticalItems } = await supabase
-    .from('branch_stocks')
-    .select('quantity, spareparts!inner(id, name, safety_stock)');
-
-  let critical = 0;
-  if (lowCriticalItems) {
-    critical = lowCriticalItems.filter(s => s.quantity <= (s.spareparts?.safety_stock || 5)).length;
+  const stockBySpId = {};
+  for (const bs of branchStocks) {
+    if (!stockBySpId[bs.sparepart_id]) stockBySpId[bs.sparepart_id] = 0;
+    stockBySpId[bs.sparepart_id] += bs.quantity || 0;
   }
 
-  const { data: recentActivity } = await supabase
-    .from('activities')
-    .select('id, action, description, entity_type, created_at')
-    .order('created_at', { ascending: false })
-    .limit(10);
+  let totalStock = 0, totalValue = 0, critical = 0, low = 0, overstock = 0, safe = 0;
 
-  const { data: monthlyTrend } = await supabase
-    .from('stock_movements')
-    .select('created_at, quantity, type, branch_id')
-    .gte('created_at', new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString())
-    .order('created_at', { ascending: true });
+  for (const sp of spareparts) {
+    const qty = stockBySpId[sp.id] || 0;
+    totalStock += qty;
+    totalValue += qty * (Number(sp.price) || 0);
 
-  const { data: forecastRuns } = await supabase
-    .from('forecast_runs')
-    .select('id, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(1);
+    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
+    if (qty <= sp.safety_stock) critical++;
+    else if (qty <= sp.reorder_point) low++;
+    else if (qty >= overstockThreshold) overstock++;
+    else safe++;
+  }
 
-  const forecastStatus = forecastRuns?.length > 0 ? forecastRuns[0].status : null;
+  const [recentActivity, monthlyTrend, forecastRuns] = await Promise.all([
+    supabase
+      .from('activities')
+      .select('id, action, description, entity_type, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('stock_movements')
+      .select('created_at, quantity, type, branch_id')
+      .gte('created_at', new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('forecast_runs')
+      .select('id, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(1),
+  ]);
 
   return {
     kpi: {
       total_spareparts: totalSpareparts.count || 0,
       total_branches: totalBranches.count || 0,
       total_stock: totalStock,
-      total_value: 0,
+      total_value: totalValue,
       critical_stock: critical,
-      low_stock: lowStockItems?.length || 0,
+      low_stock: low,
+      overstock,
+      safe,
     },
-    recent_activity: recentActivity || [],
-    monthly_trend: monthlyTrend || [],
-    forecast_status: forecastStatus,
+    recent_activity: recentActivity?.data || [],
+    monthly_trend: monthlyTrend?.data || [],
+    forecast_status: forecastRuns?.data?.length > 0 ? forecastRuns.data[0].status : null,
   };
 }
 

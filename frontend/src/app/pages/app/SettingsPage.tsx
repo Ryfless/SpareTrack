@@ -125,8 +125,13 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
   const s = settingsData?.settings as Record<string, string> | undefined;
 
   return (
-    <div className="flex gap-5">
-      <div className="w-44 shrink-0">
+    <div className="flex flex-col md:flex-row gap-5">
+      {/* Mobile tabs */}
+      <div className="md:hidden overflow-x-auto flex gap-1 pb-1 -mx-1 px-1">
+        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs transition-all ${tab===t.id?"bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-semibold":"text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"}`}><t.icon size={13} />{t.label}</button>)}
+      </div>
+      {/* Desktop sidebar */}
+      <div className="hidden md:block w-44 shrink-0">
         <Card className="p-2">
           {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-all ${tab===t.id?"bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-semibold":"text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"}`}><t.icon size={14} />{t.label}</button>)}
         </Card>
@@ -140,7 +145,7 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
               <div><div className="font-semibold text-slate-800 dark:text-slate-200">{p?.full_name || '-'}</div><div className="text-xs text-slate-400">{p?.email} · {p?.role === 'super_admin' ? 'Super Admin' : p?.role || '-'}</div></div>
               <button onClick={onEditProfile} className="ml-auto flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><User size={13} />Edit Profil</button>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               {[["Nama", p?.full_name || '-'],["Email", p?.email || '-'],["Role", p?.role === 'super_admin' ? 'Super Admin' : p?.role || '-'],["No. HP", p?.phone || '-'],["Cabang", p?.branch || '-'],["ID", p?.id?.slice(0,12) || '-']].map(([l, v]) => (
                 <div key={l}><div className="text-xs text-slate-400 mb-0.5">{l}</div><div className="font-medium text-slate-700 dark:text-slate-300">{v}</div></div>
               ))}
@@ -173,7 +178,7 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
               <div className="flex items-center gap-2 mb-3"><span className="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Model Forecasting</span><span className="text-xs px-2 py-0.5 bg-blue-700 text-white rounded-full font-semibold">SMA Aktif</span></div>
               <FormField label="Periode SMA (bulan)"><div className="flex items-center gap-3"><input defaultValue={s?.['sma_period'] || '3'} type="number" min="1" max="12" className="w-20 px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200 text-center" /><span className="text-xs text-slate-500">bulan data historis</span></div></FormField>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[["default_min_stock", s?.['default_min_stock'] || '10', "unit"],["safety_stock_multiplier", s?.['safety_stock_multiplier'] || '1.5', "×"],["reorder_point_multiplier", s?.['reorder_point_multiplier'] || '2.0', "×"],["buffer_lead_time", s?.['buffer_lead_time'] || '20', "%"]].map(([key, val, unit]) => (
                 <FormField key={key} label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}><div className="flex items-center gap-2"><input defaultValue={val} type="number" step="0.1" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200" /><span className="text-xs text-slate-400 shrink-0">{unit}</span></div></FormField>
               ))}
@@ -271,10 +276,10 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
               <h3 className="font-bold text-slate-800 dark:text-slate-200">Audit Log</h3>
               <button onClick={() => toast.success("Audit log diekspor")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-lg transition-all"><Download size={13} />Export</button>
             </div>
-            <div className="flex flex-wrap items-end gap-4 mb-4">
-              <div className="flex flex-col gap-1">
+            <div className="flex flex-col sm:flex-row flex-wrap items-end gap-3 mb-4">
+              <div className="flex flex-col gap-1 w-full sm:w-auto">
                 <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Filter Aksi</label>
-                <select value={auditFilterAction} onChange={e => { setAuditFilterAction(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`}>
+                <select value={auditFilterAction} onChange={e => { setAuditFilterAction(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-full sm:w-36`}>
                   <option value="">Semua Aksi</option>
                   <option value="create_po">Buat PO</option>
                   <option value="approve_po">Setujui PO</option>
@@ -283,17 +288,17 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
                   <option value="generate_restock">Generate Restock</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full sm:w-auto">
                 <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Dari Tanggal</label>
-                <input type="date" value={auditFilterStartDate} onChange={e => { setAuditFilterStartDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`} />
+                <input type="date" value={auditFilterStartDate} onChange={e => { setAuditFilterStartDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-full sm:w-36`} />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full sm:w-auto">
                 <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Sampai Tanggal</label>
-                <input type="date" value={auditFilterEndDate} onChange={e => { setAuditFilterEndDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-36`} />
+                <input type="date" value={auditFilterEndDate} onChange={e => { setAuditFilterEndDate(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-full sm:w-36`} />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full sm:w-auto">
                 <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Carian</label>
-                <input type="text" value={auditFilterSearch} onChange={e => { setAuditFilterSearch(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-48`} placeholder="Cari aksi atau tipe..." />
+                <input type="text" value={auditFilterSearch} onChange={e => { setAuditFilterSearch(e.target.value); setAuditLogsPage(1); }} className={`${inputCls} text-xs py-1.5 w-full sm:w-48`} placeholder="Cari aksi atau tipe..." />
               </div>
             </div>
             {auditLogsLoading ? (

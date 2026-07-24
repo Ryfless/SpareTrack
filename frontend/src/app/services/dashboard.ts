@@ -8,6 +8,8 @@ export interface DashboardSummary {
     total_value: number;
     critical_stock: number;
     low_stock: number;
+    overstock: number;
+    safe: number;
   };
   recent_activity: Array<{
     id: string;

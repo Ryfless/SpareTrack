@@ -8,11 +8,12 @@ interface ReceiptViewProps {
   onClose: () => void;
 }
 
-const W = 500;
-const LH = 22;
-const M = 30;
-const FONT = "14px 'Courier New', monospace";
-const BOLD = "bold 14px 'Courier New', monospace";
+const W = 580;
+const LH = 20;
+const M = 28;
+const FONT = "12px 'Courier New', monospace";
+const BOLD = "bold 12px 'Courier New', monospace";
+const HDR = "bold 13px 'Courier New', monospace";
 
 function render(ctx: CanvasRenderingContext2D, po: PurchaseOrderDetail) {
   let y = M;
@@ -21,13 +22,14 @@ function render(ctx: CanvasRenderingContext2D, po: PurchaseOrderDetail) {
   const rx = W - M;
 
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, W, 2000);
+  ctx.fillRect(0, 0, W, 4000);
 
   ctx.font = BOLD; ctx.textAlign = 'center'; ctx.fillStyle = '#1e293b';
   ctx.fillText('SPARETRACK', cx, y); y += LH;
   ctx.font = FONT; ctx.fillStyle = '#64748b';
   ctx.fillText('Multi-Branch System', cx, y); y += LH;
-  ctx.fillText('Purchase Order', cx, y); y += LH + 8;
+  ctx.font = HDR; ctx.fillStyle = '#1e293b';
+  ctx.fillText('PURCHASE ORDER', cx, y); y += LH + 6;
   dash(ctx, lx, y, rx); y += LH;
 
   const info: [string, string][] = [
@@ -39,37 +41,52 @@ function render(ctx: CanvasRenderingContext2D, po: PurchaseOrderDetail) {
   if (po.notes) info.push(['Catatan', po.notes]);
   for (const [l, v] of info) {
     ctx.font = FONT; ctx.textAlign = 'left'; ctx.fillStyle = '#64748b'; ctx.fillText(l, lx, y);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#1e293b'; ctx.fillText(v, rx, y); y += LH;
+    ctx.textAlign = 'right'; ctx.fillStyle = '#1e293b';
+    const maxW = rx - lx - 10;
+    const display = ctx.measureText(v).width > maxW ? v.slice(0, Math.floor(v.length * maxW / ctx.measureText(v).width) - 3) + '...' : v;
+    ctx.fillText(display, rx, y); y += LH;
   }
-  y += 4; dash(ctx, lx, y, rx); y += LH;
+  y += 4; dash(ctx, lx, y, rx); y += LH - 2;
 
-  const t = ['#', 'Item', 'Qty', 'Harga', 'Total'];
-  const tx = [lx, lx + 25, lx + 230, lx + 310, lx + 400];
-  ctx.font = BOLD; ctx.fillStyle = '#334155';
-  t.forEach((h, i) => { ctx.textAlign = 'left'; ctx.fillText(h, tx[i], y); });
+  const tx = [lx, lx + 20, lx + 270, lx + 370, lx + 470];
+  ctx.font = HDR; ctx.fillStyle = '#334155';
+  ctx.textAlign = 'left'; ctx.fillText('#', tx[0], y);
+  ctx.fillText('Item', tx[1], y);
+  ctx.textAlign = 'right'; ctx.fillText('Qty', tx[2], y);
+  ctx.fillText('Harga', tx[3], y);
+  ctx.fillText('Total', tx[4], y);
   y += LH; line(ctx, lx, y, rx); y += 4;
 
   ctx.font = FONT; ctx.fillStyle = '#475569';
   for (const item of po.items) {
     const p = item;
-    ctx.textAlign = 'left'; ctx.fillText(String(po.items.indexOf(item) + 1), tx[0], y);
-    ctx.fillText(`${p.name} (${p.code})`, tx[1], y);
-    ctx.textAlign = 'right'; ctx.fillText(`${p.quantity} ${p.unit}`, tx[2], y, 80);
-    ctx.fillText(`Rp ${(p.unit_price || 0).toLocaleString()}`, tx[3], y, 90);
-    ctx.font = BOLD; ctx.fillText(`Rp ${(p.total_price || 0).toLocaleString()}`, tx[4], y, 100);
+    const lineY = y;
+
+    ctx.textAlign = 'left';
+    ctx.fillText(String(po.items.indexOf(item) + 1), tx[0], lineY);
+
+    const nameStr = `${p.name} (${p.code})`;
+    const maxNameW = tx[2] - tx[1] - 8;
+    const displayName = ctx.measureText(nameStr).width > maxNameW ? nameStr.slice(0, Math.floor(nameStr.length * maxNameW / ctx.measureText(nameStr).width) - 3) + '...' : nameStr;
+    ctx.fillText(displayName, tx[1], lineY);
+
+    ctx.textAlign = 'right';
+    ctx.fillText(`${p.quantity} ${p.unit}`, tx[2], lineY);
+    ctx.fillText(`Rp ${(p.unit_price || 0).toLocaleString()}`, tx[3], lineY);
+    ctx.font = BOLD; ctx.fillText(`Rp ${(p.total_price || 0).toLocaleString()}`, tx[4], lineY);
     ctx.font = FONT; y += LH;
   }
-  y += 4; dash(ctx, lx, y, rx); y += LH;
+  y += 4; dash(ctx, lx, y, rx); y += LH - 2;
 
   const tq = po.items.reduce((s, i) => s + i.quantity, 0);
-  ctx.font = BOLD; ctx.fillStyle = '#1e293b';
+  ctx.font = HDR; ctx.fillStyle = '#1e293b';
   ctx.textAlign = 'left'; ctx.fillText(`Total Item: ${tq}`, lx, y);
   ctx.textAlign = 'right'; ctx.fillText(`Rp ${(po.total_amount || 0).toLocaleString()}`, rx, y);
-  y += LH + 8; dash(ctx, lx, y, rx); y += LH;
+  y += LH + 6; dash(ctx, lx, y, rx); y += LH - 2;
 
   ctx.textAlign = 'center'; ctx.font = FONT; ctx.fillStyle = '#64748b';
   ctx.fillText('Terima kasih', cx, y); y += LH;
-  ctx.font = "12px 'Courier New', monospace"; ctx.fillStyle = '#94a3b8';
+  ctx.font = "11px 'Courier New', monospace"; ctx.fillStyle = '#94a3b8';
   ctx.fillText(`Dicetak: ${new Date().toLocaleString('id-ID')}`, cx, y);
 
   return y + M;
@@ -94,8 +111,9 @@ export function ReceiptView({ po, onClose }: ReceiptViewProps) {
     if (!cvs) return;
     const ctx = cvs.getContext('2d');
     if (!ctx) return;
+    const h = render(ctx, po);
     cvs.width = W * 2;
-    cvs.height = 4000;
+    cvs.height = h * 2;
     ctx.scale(2, 2);
     render(ctx, po);
   }, [po]);

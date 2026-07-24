@@ -183,6 +183,13 @@ async function summary() {
 async function recommendations(query) {
   const { branch_id, status, urgency, limit = 50 } = query;
 
+  await supabase
+    .from('restock_recommendations')
+    .update({ status: 'pending', postpone_reason: '', postpone_until: null, updated_at: new Date().toISOString() })
+    .eq('status', 'postponed')
+    .lt('postpone_until', new Date().toISOString().split('T')[0])
+    .is('postpone_until', 'not', null);
+
   let qry = supabase
     .from('restock_recommendations')
     .select('*, spareparts!inner(code, name, price, unit, min_stock, lead_time), branches!inner(name)')
@@ -213,6 +220,8 @@ async function recommendations(query) {
       urgency: r.urgency,
       status: r.status,
       notes: r.notes,
+      postpone_reason: r.postpone_reason || '',
+      postpone_until: r.postpone_until || null,
       days_to_stockout: r.current_stock > 0
         ? Math.round(r.current_stock / Math.max(r.recommended_qty / 30, 1))
         : 0,
@@ -251,6 +260,8 @@ async function detailRecommendation(id) {
     urgency: r.urgency,
     status: r.status,
     notes: r.notes,
+    postpone_reason: r.postpone_reason || '',
+    postpone_until: r.postpone_until || null,
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -328,6 +339,59 @@ async function rejectRecommendation(id, userId, ip_address = '') {
     entity_id: id,
     old_data: { status: rec.status },
     new_data: { status: 'rejected' },
+    ip_address,
+  });
+
+  return data;
+}
+
+async function postponeRecommendation(id, userId, ip_address = '', postpone_reason = '', postpone_until = null) {
+  const { data: rec, error: findError } = await supabase
+    .from('restock_recommendations')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (findError || !rec) return null;
+
+  const newStatus = rec.status === 'postponed' ? 'pending' : 'postponed';
+  const updates = { status: newStatus, updated_at: new Date().toISOString() };
+
+  if (newStatus === 'postponed') {
+    updates.postpone_reason = postpone_reason || rec.notes || '';
+    updates.postpone_until = postpone_until || null;
+  } else {
+    updates.postpone_reason = '';
+    updates.postpone_until = null;
+  }
+
+  const { data, error } = await supabase
+    .from('restock_recommendations')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const action = newStatus === 'postponed' ? 'postpone_restock' : 'reactivate_restock';
+  const desc = newStatus === 'postponed' ? `Menunda rekomendasi restock ${rec.id}` : `Mengaktifkan kembali rekomendasi restock ${rec.id}`;
+
+  await supabase.from('activities').insert({
+    user_id: userId,
+    action,
+    entity_type: 'restock_recommendation',
+    entity_id: id,
+    description: desc,
+  });
+
+  await supabase.from('audit_logs').insert({
+    user_id: userId,
+    action,
+    entity_type: 'restock_recommendation',
+    entity_id: id,
+    old_data: { status: rec.status, postpone_reason: rec.postpone_reason, postpone_until: rec.postpone_until },
+    new_data: { status: newStatus, postpone_reason: updates.postpone_reason, postpone_until: updates.postpone_until },
     ip_address,
   });
 
@@ -670,7 +734,7 @@ async function cancelPurchaseOrder(poId, userId, ip_address = '') {
 
 module.exports = {
   generate, summary, recommendations, detailRecommendation,
-  approveRecommendation, rejectRecommendation,
+  approveRecommendation, rejectRecommendation, postponeRecommendation,
   purchaseOrders, createPurchaseOrder,
   purchaseOrderDetail, approvePurchaseOrder, receivePurchaseOrder,
   cancelPurchaseOrder,

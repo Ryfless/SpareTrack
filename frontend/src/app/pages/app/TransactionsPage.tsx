@@ -57,7 +57,7 @@ export function TransactionsPage({ userProfile }: Props) {
       <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} />
       <div className="flex flex-wrap gap-3 items-center">
         <div className="flex gap-0.5 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
-          {["all", "in", "out", "transfer", "adjustment"].map(t => <button key={t} onClick={() => setTypeFilter(t)} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${typeFilter === t ? "bg-blue-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{t === "all" ? "Semua" : TRX_CFG[t]?.label ?? t}</button>)}
+          {["all", "in", "out", "transfer"].map(t => <button key={t} onClick={() => setTypeFilter(t)} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${typeFilter === t ? "bg-blue-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{t === "all" ? "Semua" : TRX_CFG[t]?.label ?? t}</button>)}
         </div>
         <BranchSelect value={branchFilter} onChange={setBranchFilter} role={userProfile?.role} userBranch={userProfile?.branch} />
         <div className="ml-auto flex gap-2">

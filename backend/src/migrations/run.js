@@ -11,6 +11,9 @@ const MIGRATION_FILES = [
   '006_fix_overstock.sql',
   '007_theme_preference.sql',
   '008_transfer_destination.sql',
+  '009_add_postponed_status.sql',
+  '010_add_postpone_reason.sql',
+  '011_add_postpone_until.sql',
 ];
 
 function getConnectionConfigs() {
