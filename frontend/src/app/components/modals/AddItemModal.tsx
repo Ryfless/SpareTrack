@@ -43,6 +43,7 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
       });
       toast.success(`Sparepart "${form.name}" berhasil ditambahkan`);
       setForm({ code: "", name: "", category_id: "", supplier_id: "", price: "", lead_time: "", min_stock: "", reorder_point: "", safety_stock: "" });
+      window.dispatchEvent(new CustomEvent('sparetrack:refresh'));
       onClose();
     } catch { toast.error("Gagal menambahkan sparepart"); }
     finally { setSubmitting(false); }

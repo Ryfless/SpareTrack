@@ -17,7 +17,7 @@ async function list(query) {
 
   let qry = supabase
     .from('stock_movements')
-    .select('*, spareparts!inner(code, name), branches!inner(name), profiles(full_name)', { count: 'exact' });
+    .select('*, spareparts!inner(code, name), branches!stock_movements_branch_id_fkey!inner(name), dest_branch:branches!stock_movements_destination_branch_id_fkey(name), profiles(full_name)', { count: 'exact' });
 
   if (type) qry = qry.eq('type', type);
   if (branch_id) qry = qry.eq('branch_id', branch_id);
@@ -31,21 +31,94 @@ async function list(query) {
   const { data, count, error } = await qry.range(offset, offset + Number(limit) - 1);
   if (error) throw error;
 
+  // Merge old out/in pairs into single transfer entries; show new single transfer records directly
+  const movements = data || [];
+  const merged = [];
+  const paired = new Set();
+
+  // First pass: collect single transfer records
+  for (let i = 0; i < movements.length; i++) {
+    const a = movements[i];
+    if (a.type === 'transfer') {
+      paired.add(i);
+      merged.push({
+        id: a.id,
+        type: 'transfer',
+        quantity: Math.abs(a.quantity),
+        notes: a.notes || '',
+        reference_id: a.reference_id || '',
+        sparepart_id: a.sparepart_id,
+        sparepart_code: a.spareparts?.code || '',
+        sparepart_name: a.spareparts?.name || '',
+        branch_id: a.branch_id,
+        branch_name: a.branches?.name || '',
+        destination_branch_id: a.destination_branch_id || '',
+        destination_branch_name: a.dest_branch?.name || '',
+        created_by: a.profiles?.full_name || '',
+        created_at: a.created_at,
+      });
+    }
+  }
+
+  // Second pass: merge out/in pairs
+  for (let i = 0; i < movements.length; i++) {
+    if (paired.has(i)) continue;
+    const a = movements[i];
+
+    if (a.reference_id && (a.type === 'out' || a.type === 'in')) {
+      const pairIdx = movements.findIndex((b, j) =>
+        j > i && !paired.has(j) &&
+        b.reference_id === a.reference_id &&
+        b.sparepart_id === a.sparepart_id &&
+        Math.abs(b.quantity) === Math.abs(a.quantity) &&
+        b.type !== a.type
+      );
+
+      if (pairIdx !== -1) {
+        paired.add(i);
+        paired.add(pairIdx);
+        const b = movements[pairIdx];
+        const outM = a.type === 'out' ? a : b;
+        const inM = a.type === 'in' ? a : b;
+        merged.push({
+          id: outM.id,
+          type: 'transfer',
+          quantity: Math.abs(outM.quantity),
+          notes: outM.notes || inM.notes || '',
+          reference_id: outM.reference_id || '',
+          sparepart_id: outM.sparepart_id,
+          sparepart_code: outM.spareparts?.code || '',
+          sparepart_name: outM.spareparts?.name || '',
+          branch_id: outM.branch_id,
+          branch_name: outM.branches?.name || '',
+          destination_branch_id: inM.branch_id || '',
+          destination_branch_name: inM.branches?.name || '',
+          created_by: outM.profiles?.full_name || '',
+          created_at: outM.created_at,
+        });
+        continue;
+      }
+    }
+    merged.push({
+      id: a.id,
+      type: a.type,
+      quantity: a.quantity,
+      notes: a.notes || '',
+      reference_id: a.reference_id || '',
+      sparepart_id: a.sparepart_id,
+      sparepart_code: a.spareparts?.code || '',
+      sparepart_name: a.spareparts?.name || '',
+      branch_id: a.branch_id,
+      branch_name: a.branches?.name || '',
+      destination_branch_id: a.destination_branch_id || '',
+      destination_branch_name: a.dest_branch?.name || '',
+      created_by: a.profiles?.full_name || '',
+      created_at: a.created_at,
+    });
+  }
+
   return {
-    data: (data || []).map(m => ({
-      id: m.id,
-      type: m.type,
-      quantity: m.quantity,
-      notes: m.notes,
-      reference_id: m.reference_id,
-      sparepart_id: m.sparepart_id,
-      sparepart_code: m.spareparts?.code || '',
-      sparepart_name: m.spareparts?.name || '',
-      branch_id: m.branch_id,
-      branch_name: m.branches?.name || '',
-      created_by: m.profiles?.full_name || '',
-      created_at: m.created_at,
-    })),
+    data: merged,
     meta: {
       page: Number(page),
       limit: Number(limit),
@@ -90,6 +163,8 @@ async function create(data) {
   }
 
   const qty = Math.abs(Number(quantity));
+  let finalNotes = notes || '';
+  let finalRefId = reference_id || '';
 
   if (type === 'transfer' && destination_branch_id) {
     if (branch_id === destination_branch_id) {
@@ -98,54 +173,30 @@ async function create(data) {
       throw err;
     }
 
-    const { data: destBranch } = await supabase
+    const { data: destBranch, error: destErr } = await supabase
       .from('branches')
-      .select('id')
+      .select('id, name')
       .eq('id', destination_branch_id)
       .single();
 
-    if (!destBranch) {
+    if (destErr || !destBranch) {
       const err = new Error('Cabang tujuan tidak ditemukan');
       err.status = 404;
       throw err;
     }
 
-    const { data: outMovement, error: outErr } = await supabase
-      .from('stock_movements')
-      .insert({ type: 'out', sparepart_id, branch_id, quantity: qty, notes: notes || `Transfer ke ${destination_branch_id}`, reference_id: reference_id || '', created_by })
-      .select()
-      .single();
+    if (!finalNotes) {
+      const { data: sourceBranch } = await supabase
+        .from('branches')
+        .select('name')
+        .eq('id', branch_id)
+        .single();
+      finalNotes = `Transfer dari ${sourceBranch?.name || 'Unknown'} ke ${destBranch.name}`;
+    }
 
-    if (outErr) throw outErr;
-
-    const { data: inMovement, error: inErr } = await supabase
-      .from('stock_movements')
-      .insert({ type: 'in', sparepart_id, branch_id: destination_branch_id, quantity: qty, notes: notes || `Transfer dari ${branch_id}`, reference_id: reference_id || '', created_by })
-      .select()
-      .single();
-
-    if (inErr) throw inErr;
-
-    await supabase.from('activities').insert({
-      user_id: created_by,
-      branch_id,
-      action: 'transfer',
-      entity_type: 'stock_movement',
-      entity_id: outMovement.id,
-      description: `Transfer ${qty}× sparepart ke cabang tujuan (${notes || ''})`,
-    });
-
-    await supabase.from('audit_logs').insert({
-      user_id: created_by,
-      action: 'transfer',
-      entity_type: 'stock_movement',
-      entity_id: outMovement.id,
-      old_data: {},
-      new_data: { type, sparepart_id, branch_id, destination_branch_id, quantity: qty, notes },
-      ip_address,
-    });
-
-    return { out: outMovement, in: inMovement };
+    if (!finalRefId) {
+      finalRefId = `TRF-${Date.now()}`;
+    }
   }
 
   const movementData = {
@@ -153,9 +204,10 @@ async function create(data) {
     sparepart_id,
     branch_id,
     quantity: type === 'adjustment' ? Number(quantity) : qty,
-    notes: notes || '',
-    reference_id: reference_id || '',
+    notes: finalNotes,
+    reference_id: finalRefId,
     created_by,
+    ...(destination_branch_id && { destination_branch_id }),
   };
 
   const { data: movement, error } = await supabase
@@ -179,7 +231,7 @@ async function create(data) {
     action: type === 'transfer' || type === 'adjustment' ? type : type,
     entity_type: 'stock_movement',
     entity_id: movement.id,
-    description: `${activityText[type] || ''}${notes || ''}`,
+    description: `${activityText[type] || ''}${finalNotes}`,
   });
 
   await supabase.from('audit_logs').insert({
@@ -188,7 +240,7 @@ async function create(data) {
     entity_type: 'stock_movement',
     entity_id: movement.id,
     old_data: {},
-    new_data: { type, sparepart_id, branch_id, quantity, notes },
+    new_data: { type, sparepart_id, branch_id, ...(destination_branch_id && { destination_branch_id }), quantity, notes: finalNotes },
     ip_address,
   });
 

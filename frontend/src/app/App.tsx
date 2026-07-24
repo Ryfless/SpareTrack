@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import {
-  LayoutDashboard, Package, ShoppingCart, Building2, ArrowLeftRight,
+  LayoutDashboard, Package, ShoppingCart, ArrowLeftRight,
   FileBarChart, Settings, Bell, Search, Menu, X, Sun, Moon, Shield,
   ChevronRight, BarChart3, User, LogOut, Loader2,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
-import { BRANCHES } from "./data";
+
 import { ROLE_CFG, NAV_SECTIONS, PAGE_TITLES } from "./config";
 import { supabase } from "./services/supabase";
 import { logout as logoutApi } from "./services/auth";
@@ -30,6 +30,7 @@ import { TransactionsPage } from "./pages/app/TransactionsPage";
 import { ReportsPage } from "./pages/app/ReportsPage";
 import { SettingsPage } from "./pages/app/SettingsPage";
 import { list as fetchNotifsApi, getUnreadCount, markRead as markReadApi, markAllRead as markAllReadApi } from "./services/notifications";
+import { api } from "./services/client";
 import type { NotificationItem } from "./services/notifications";
 import type { AppState, PageId, Role } from "./types";
 
@@ -40,6 +41,7 @@ interface UserProfile {
   phone: string;
   branch: string;
   role: Role;
+  theme_preference?: string;
 }
 
 export default function App() {
@@ -48,12 +50,12 @@ export default function App() {
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState("Semua Cabang");
+
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileDropOpen, setProfileDropOpen] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
   const [currentRole, setCurrentRole] = useState<Role>("super_admin");
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [otpEmail, setOtpEmail] = useState("");
@@ -68,6 +70,14 @@ export default function App() {
   const [notifLoading, setNotifLoading] = useState(false);
 
   useEffect(() => { document.documentElement.classList.toggle("dark", darkMode); }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    if (appState !== 'app' || !userProfile?.id) return;
+    api.patch('/me', { theme_preference: darkMode ? 'dark' : 'light' }).catch(() => {
+      toast.error("Gagal menyimpan preferensi tema");
+    });
+  }, [darkMode, appState, userProfile?.id]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setCmdOpen(true); } };
@@ -133,6 +143,11 @@ export default function App() {
       if (profile) {
         setUserProfile(profile as UserProfile);
         setCurrentRole(profile.role as Role);
+        if (profile.theme_preference) {
+          const prefersDark = profile.theme_preference === 'dark';
+          setDarkMode(prefersDark);
+          localStorage.setItem('theme', prefersDark ? 'dark' : 'light');
+        }
       } else {
         setUserProfile({
           id: user.id,
@@ -141,6 +156,7 @@ export default function App() {
           phone: user.user_metadata?.phone || '',
           branch: user.user_metadata?.branch || '',
           role: (user.user_metadata?.role as Role) || 'branch_admin',
+          theme_preference: localStorage.getItem('theme') || 'light',
         });
       }
       setAppState("app");
@@ -308,10 +324,6 @@ export default function App() {
             <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{PAGE_TITLES[selectedPart?"detail":page]??page}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
-              <Building2 size={12} className="text-blue-600 shrink-0" />
-              <select value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)} className="bg-transparent text-slate-700 dark:text-slate-300 text-sm outline-none cursor-pointer">{BRANCHES.map(b => <option key={b}>{b}</option>)}</select>
-            </div>
             <div className="hidden lg:block">
               <button onClick={() => setCmdOpen(true)} className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-400 transition-all">
                 <Search size={12} className="text-slate-400" />
@@ -400,10 +412,10 @@ export default function App() {
         <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
           {page === "dashboard"    && !selectedPart && <DashboardPage onNavigate={navigate} onAction={quickAction} />}
           {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} />}
-          {page === "restock"      && !selectedPart && <RestockPage />}
+          {page === "restock"      && !selectedPart && <RestockPage userProfile={userProfile} />}
           {page === "branches"     && !selectedPart && <BranchesPage />}
-          {page === "transactions" && !selectedPart && <TransactionsPage />}
-          {page === "reports"      && !selectedPart && <ReportsPage />}
+          {page === "transactions" && !selectedPart && <TransactionsPage userProfile={userProfile} />}
+          {page === "reports"      && !selectedPart && <ReportsPage userProfile={userProfile} />}
           {page === "settings"     && !selectedPart && <SettingsPage onEditProfile={() => setProfileEditOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
         </main>
       </div>

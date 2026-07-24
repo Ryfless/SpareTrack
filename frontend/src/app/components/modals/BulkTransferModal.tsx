@@ -91,6 +91,7 @@ export function BulkTransferModal({ open, onClose, onSuccess, selectedItems }: P
         notes: notes || undefined,
       });
       toast.success(`${result.items_transferred} item berhasil ditransfer`);
+      window.dispatchEvent(new CustomEvent('sparetrack:refresh'));
       onSuccess();
       onClose();
     } catch {

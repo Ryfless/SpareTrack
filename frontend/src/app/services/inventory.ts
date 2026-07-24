@@ -31,6 +31,8 @@ export interface SparepartDetail {
   name: string;
   category: string;
   supplier: string;
+  category_id?: string;
+  supplier_id?: string;
   price: number;
   min_stock: number;
   max_stock: number | null;

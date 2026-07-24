@@ -7,6 +7,7 @@ import { StatusBadge } from "./shared/StatusBadge";
 import { StokMasukModal } from "./modals/StokMasukModal";
 import { StokKeluarModal } from "./modals/StokKeluarModal";
 
+
 export function DetailDrawer({ partId, onClose }: { partId: string | null; onClose: () => void }) {
   const [part, setPart] = useState<SparepartDetail | null>(null);
   const [loading, setLoading] = useState(false);

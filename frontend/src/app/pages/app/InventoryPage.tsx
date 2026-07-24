@@ -1,22 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Package, Search, Sliders, Plus, Download, Activity, Tag,
-  X, Eye, PackageSearch, ChevronLeft, ChevronRight, ArrowLeftRight,
+  X, Eye, Pencil, PackageSearch, ChevronLeft, ChevronRight, ArrowLeftRight, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { EmptyState } from "../../components/shared/EmptyState";
 import { Skeleton } from "../../components/shared/Skeleton";
+import { Tooltip } from "../../components/shared/Tooltip";
 import { AddItemModal } from "../../components/modals/AddItemModal";
+import { EditItemModal } from "../../components/modals/EditItemModal";
 import { BulkTransferModal } from "../../components/modals/BulkTransferModal";
 import { list as fetchInventory, exportCsv, type SparepartListItem } from "../../services/inventory";
 import { getCategories, getSuppliers } from "../../services/references";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { ApiResponse } from "../../services/client";
 
 export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelectPart: (id: string) => void; initialFilter?: string }) {
   const [items, setItems] = useState<SparepartListItem[]>([]);
-  const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, total_pages: 0 });
+  const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, total_pages: 0, counts: { total: 0, safe: 0, low: 0, critical: 0, overstock: 0 } });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -30,6 +33,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
+  const [editItemId, setEditItemId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -71,6 +75,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
           limit: Number(res.meta.limit) || 20,
           total: Number(res.meta.total) || 0,
           total_pages: Number(res.meta.total_pages) || 0,
+          counts: (res.meta.counts as typeof meta.counts) || meta.counts,
         });
       }
     } catch {
@@ -82,15 +87,23 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    function onRefresh() { loadData(); }
+    window.addEventListener('sparetrack:refresh', onRefresh);
+    return () => window.removeEventListener('sparetrack:refresh', onRefresh);
+  }, [loadData]);
+
+  useAutoRefresh(loadData, 30 * 1000, true);
+
   function toggleSelect(id: string) { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); setSelected(n); }
   function toggleAll() { selected.size === items.length ? setSelected(new Set()) : setSelected(new Set(items.map(p => p.id))); }
 
   const statusFilters = [
-    { l: "Semua", f: "all", cls: "text-slate-800 dark:text-slate-200" },
-    { l: "Aman", f: "safe", cls: "text-emerald-600" },
-    { l: "Menipis", f: "low", cls: "text-amber-600" },
-    { l: "Kritis", f: "critical", cls: "text-red-600" },
-    { l: "Overstock", f: "overstock", cls: "text-purple-600" },
+    { l: "Semua", f: "all", cls: "text-slate-800 dark:text-slate-200", key: "total" as const },
+    { l: "Aman", f: "safe", cls: "text-emerald-600", key: "safe" as const },
+    { l: "Menipis", f: "low", cls: "text-amber-600", key: "low" as const },
+    { l: "Kritis", f: "critical", cls: "text-red-600", key: "critical" as const },
+    { l: "Overstock", f: "overstock", cls: "text-purple-600", key: "overstock" as const },
   ];
 
   if (loading && items.length === 0) {
@@ -108,6 +121,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
   return (
     <div className="space-y-4">
       <AddItemModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <EditItemModal open={editItemId !== null} sparepartId={editItemId} onClose={() => setEditItemId(null)} onSuccess={loadData} />
       {selected.size > 0 && (
         <BulkTransferModal
           open={bulkTransferOpen}
@@ -119,7 +133,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {statusFilters.map(s => (
           <Card key={s.f} className={`p-4 text-center transition-all hover:shadow-md hover:-translate-y-0.5 cursor-pointer ${filterStatus === s.f ? "ring-2 ring-blue-500" : ""}`} onClick={() => { setFilterStatus(s.f); setPage(1); }}>
-            <div className={`text-2xl font-bold ${s.cls}`}>{s.f === "all" ? meta.total : items.filter(i => i.status === s.f).length}</div>
+            <div className={`text-2xl font-bold ${s.cls}`}>{meta.counts[s.key]}</div>
             <div className="text-xs text-slate-400 mt-0.5">{s.l}</div>
           </Card>
         ))}
@@ -160,6 +174,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
               toast.error("Gagal export CSV");
             }
           }} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 active:scale-95 rounded-lg transition-all"><Download size={13} />Export CSV</button>
+          <RefreshCw size={13} className="text-slate-400 animate-spin" />
         </div>
         {filterOpen && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -205,7 +220,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
                         <td className="px-4 py-3 text-center font-semibold text-slate-800 dark:text-slate-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.total_stock}</td>
                         <td className="px-4 py-3 text-center text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.min_stock}</td>
                         <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
-                        <td className="px-4 py-3"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></td>
+                        <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
                       </tr>
                     );
                   })

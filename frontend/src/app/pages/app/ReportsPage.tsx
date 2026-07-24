@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Card } from "../../components/shared/Card";
 import { KPICard } from "../../components/KPICard";
+import { BranchSelect } from "../../components/shared/BranchSelect";
 import { ChartTip } from "../../components/shared/ChartTip";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { inputCls } from "../../config";
@@ -13,7 +14,11 @@ function formatRp(n: number) {
   return `Rp ${(n / 1000000).toFixed(1)}M`;
 }
 
-export function ReportsPage() {
+interface Props {
+  userProfile?: { role: string; branch: string } | null;
+}
+
+export function ReportsPage({ userProfile }: Props) {
   const today = new Date();
   const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1);
   const [startDate, setStartDate] = useState(sixMonthsAgo.toISOString().slice(0, 10));
@@ -21,14 +26,17 @@ export function ReportsPage() {
   const [data, setData] = useState<ReportSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+  const [branchFilter, setBranchFilter] = useState("");
 
   useEffect(() => {
     setLoading(true);
-    getSummary({ start_date: startDate, end_date: endDate })
+    const query: Record<string, string | undefined> = { start_date: startDate, end_date: endDate };
+    if (branchFilter) query.branch_id = branchFilter;
+    getSummary(query)
       .then(setData)
       .catch(() => toast.error("Gagal memuat laporan"))
       .finally(() => setLoading(false));
-  }, [startDate, endDate]);
+  }, [startDate, endDate, branchFilter]);
 
   const chartData = [
     { month:"Jan", rev:42.5, units:280 }, { month:"Feb", rev:48.2, units:305 },
@@ -39,11 +47,9 @@ export function ReportsPage() {
   async function handleExport(type: 'pdf' | 'excel') {
     setExporting(type);
     try {
-      const blob = await (type === 'pdf' ? exportPdf : exportExcel)({
-        type: 'summary',
-        start_date: startDate,
-        end_date: endDate,
-      });
+      const query: Record<string, string | undefined> = { type: 'summary', start_date: startDate, end_date: endDate };
+      if (branchFilter) query.branch_id = branchFilter;
+      const blob = await (type === 'pdf' ? exportPdf : exportExcel)(query as any);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -69,6 +75,7 @@ export function ReportsPage() {
       <Card className="p-4">
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex items-center gap-2 text-sm"><Calendar size={14} className="text-slate-400" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`${inputCls} w-auto`} /><span className="text-slate-400">–</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${inputCls} w-auto`} /></div>
+          <BranchSelect value={branchFilter} onChange={setBranchFilter} role={userProfile?.role} userBranch={userProfile?.branch} />
           <div className="ml-auto flex gap-2">
             <button onClick={() => handleExport('pdf')} disabled={exporting !== null} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 active:scale-95 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
               {exporting === 'pdf' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}Export PDF

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Package, BarChart3, AlertTriangle, ShoppingCart, Zap, Layers, Building2, Target,
   Plus, ArrowDownRight, Activity, Truck, Users,
-  ChevronRight, MapPin, AlertCircle, Clock, Loader2,
+  ChevronRight, MapPin, AlertCircle, Clock, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
@@ -14,6 +14,7 @@ import { getSummary, getRecentActivity } from "../../services/dashboard";
 import { list as fetchBranches } from "../../services/branches";
 import { getSeries } from "../../services/forecast";
 import { getRecommendations } from "../../services/restock";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { PageId } from "../../types";
 
 export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId, f?: string) => void; onAction: (a: string) => void }) {
@@ -25,19 +26,39 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
   const [urgentRestock, setUrgentRestock] = useState(0);
   const [restockItems, setRestockItems] = useState<Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>>([]);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     setLoading(true);
-    Promise.all([
-      getSummary().then(s => { if (s?.kpi) setKpi(s.kpi); if (s?.monthly_trend) {} }),
-      getRecentActivity().then(setActivities).catch(() => {}),
-      fetchBranches().then(setBranches).catch(() => {}),
-      getSeries({ limit: 12 }).then(s => setForecastData(s.map(f => ({ month: f.month.slice(0, 7), predicted_quantity: f.predicted_quantity })))).catch(() => {}),
-      getRecommendations({ limit: 10 }).then(r => {
-        setUrgentRestock(r.filter(i => i.urgency === 'high' || i.urgency === 'critical').length);
-        setRestockItems(r.filter(i => i.urgency === 'high' || i.urgency === 'critical'));
-      }).catch(() => {}),
-    ]).catch(() => {}).finally(() => setLoading(false));
+    try {
+      const [summary, activities, branches, forecast, recs] = await Promise.all([
+        getSummary().catch(() => null),
+        getRecentActivity().catch(() => []),
+        fetchBranches().catch(() => []),
+        getSeries({ limit: 12 }).catch(() => []),
+        getRecommendations({ limit: 10 }).catch(() => []),
+      ]);
+      if (summary?.kpi) setKpi(summary.kpi);
+      setActivities(activities as Array<{ id: string; description: string; action: string; created_at: string }>);
+      setBranches(branches as Array<{ id: string; name: string; city: string }>);
+      setForecastData((forecast as Array<{ month: string; predicted_quantity: number }>).map(f => ({ month: f.month.slice(0, 7), predicted_quantity: f.predicted_quantity })));
+      const urgent = (recs as Array<{ urgency: string }>).filter(i => i.urgency === 'high' || i.urgency === 'critical');
+      setUrgentRestock(urgent.length);
+      setRestockItems(urgent as Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    function onRefresh() { loadData(); }
+    window.addEventListener('sparetrack:refresh', onRefresh);
+    return () => window.removeEventListener('sparetrack:refresh', onRefresh);
+  }, [loadData]);
+
+  useAutoRefresh(loadData, 60 * 1000, true);
 
   const safe = kpi.total_spareparts - kpi.low_stock - kpi.critical_stock;
   const overstock = Math.max(0, kpi.total_spareparts - safe - kpi.low_stock - kpi.critical_stock);
@@ -61,9 +82,17 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
   if (loading) {
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-20" />)}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div>
+        <Skeleton className="h-24" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-28" />)}</div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4"><Skeleton className="h-64 lg:col-span-2" /><Skeleton className="h-64" /></div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32" />)}</div>
+          <Skeleton className="h-48" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Skeleton className="h-56 lg:col-span-2" />
+          <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14" />)}</div>
+        </div>
       </div>
     );
   }
@@ -76,6 +105,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
           <Zap size={14} className="text-amber-500" />
           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Action Center</span>
           <span className="text-xs px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-full font-semibold">{kpi.critical_stock + kpi.low_stock} perlu perhatian</span>
+          <RefreshCw size={11} className="ml-auto text-slate-400 animate-spin" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {actionAlerts.map(a => (

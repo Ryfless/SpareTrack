@@ -28,10 +28,14 @@ async function summary(query) {
     .from('spareparts')
     .select('id', { count: 'exact', head: true });
 
-  const { data: criticalItems } = await supabase
+  let critQuery = supabase
     .from('branch_stocks')
     .select('*, spareparts(name, code), branches(name)', { count: 'exact' })
     .lte('quantity', 10);
+
+  if (branch_id) critQuery = critQuery.eq('branch_id', branch_id);
+
+  const { data: criticalItems } = await critQuery;
 
   return {
     period: {

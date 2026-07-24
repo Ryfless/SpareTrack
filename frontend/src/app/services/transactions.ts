@@ -11,6 +11,8 @@ export interface Transaction {
   sparepart_name: string;
   branch_id: string;
   branch_name: string;
+  destination_branch_id?: string;
+  destination_branch_name?: string;
   created_by: string;
   created_at: string;
 }

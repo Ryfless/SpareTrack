@@ -2,6 +2,36 @@ const { stringify } = require('csv-stringify/sync');
 const { supabaseAdmin: supabase } = require('../config/supabase');
 const { sendNotification, sendNotificationToBranch } = require('./notificationService');
 
+async function computeStatusCounts() {
+  const { data: spareparts } = await supabase
+    .from('spareparts')
+    .select('id, max_stock, min_stock, safety_stock, reorder_point')
+    .eq('is_active', true);
+
+  if (!spareparts || spareparts.length === 0) {
+    return { total: 0, safe: 0, low: 0, critical: 0, overstock: 0 };
+  }
+
+  const counts = { total: spareparts.length, safe: 0, low: 0, critical: 0, overstock: 0 };
+
+  await Promise.all(spareparts.map(async (sp) => {
+    const { data: stocks } = await supabase
+      .from('branch_stocks')
+      .select('quantity')
+      .eq('sparepart_id', sp.id);
+
+    const totalStock = stocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
+
+    if (totalStock <= sp.safety_stock) counts.critical++;
+    else if (totalStock <= sp.reorder_point) counts.low++;
+    else if (totalStock >= overstockThreshold) counts.overstock++;
+    else counts.safe++;
+  }));
+
+  return counts;
+}
+
 async function list(query) {
   const {
     page = 1,
@@ -41,6 +71,74 @@ async function list(query) {
     qry = qry.order(sortColumn, { ascending: order === 'asc' });
   }
 
+  const overallCounts = await computeStatusCounts();
+
+  if (status) {
+    const { data: spareparts, error } = await qry;
+    if (error) throw error;
+
+    let enriched = await Promise.all((spareparts || []).map(async (sp) => {
+      let stockQry = supabase
+        .from('branch_stocks')
+        .select('quantity, branches!inner(id, name)');
+
+      if (branch_id) {
+        stockQry = stockQry.eq('branch_id', branch_id);
+      }
+
+      const { data: stocks } = await stockQry.eq('sparepart_id', sp.id);
+
+      const totalStock = stocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+      const stockByBranch = stocks?.map(s => ({
+        branch_id: s.branches.id,
+        branch_name: s.branches.name,
+        quantity: s.quantity,
+      })) || [];
+
+      const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
+      let itemStatus = 'safe';
+      if (totalStock <= sp.safety_stock) itemStatus = 'critical';
+      else if (totalStock <= sp.reorder_point) itemStatus = 'low';
+      else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+
+      if (itemStatus !== status) return null;
+
+      return {
+        ...sp,
+        category: sp.categories?.name || '',
+        supplier: sp.suppliers?.name || '',
+        total_stock: totalStock,
+        stock_by_branch: stockByBranch,
+        status: itemStatus,
+      };
+    }));
+
+    enriched = enriched.filter(Boolean);
+
+    if (sort_by === 'status' || sort_by === 'supplier' || sort_by === 'category') {
+      const dir = order === 'desc' ? -1 : 1;
+      enriched.sort((a, b) => {
+        const va = (a[sort_by] || '').toLowerCase();
+        const vb = (b[sort_by] || '').toLowerCase();
+        return va < vb ? -dir : va > vb ? dir : 0;
+      });
+    }
+
+    const total = enriched.length;
+    const paged = enriched.slice(offset, offset + Number(limit));
+
+    return {
+      data: paged,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        total_pages: Math.ceil(total / Number(limit)),
+        counts: overallCounts,
+      },
+    };
+  }
+
   const { data: spareparts, count, error } = await qry.range(offset, offset + Number(limit) - 1);
   if (error) throw error;
 
@@ -68,8 +166,6 @@ async function list(query) {
     else if (totalStock <= sp.reorder_point) itemStatus = 'low';
     else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
 
-    if (status && itemStatus !== status) return null;
-
     return {
       ...sp,
       category: sp.categories?.name || '',
@@ -79,8 +175,6 @@ async function list(query) {
       status: itemStatus,
     };
   }));
-
-  enriched = enriched.filter(Boolean);
 
   if (sort_by === 'status' || sort_by === 'supplier' || sort_by === 'category') {
     const dir = order === 'desc' ? -1 : 1;
@@ -98,6 +192,7 @@ async function list(query) {
       limit: Number(limit),
       total: count || 0,
       total_pages: Math.ceil((count || 0) / Number(limit)),
+      counts: overallCounts,
     },
   };
 }
@@ -191,14 +286,40 @@ async function create(data) {
   return sparepart;
 }
 
-async function update(id, data) {
+async function update(id, data, userId, ip_address = '') {
   const { data: existing } = await supabase
     .from('spareparts')
-    .select('id')
+    .select('*')
     .eq('id', id)
     .single();
 
   if (!existing) return null;
+
+  if (data.category_id) {
+    const { data: cat } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('id', data.category_id)
+      .single();
+    if (!cat) {
+      const err = new Error('Kategori tidak ditemukan');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  if (data.supplier_id) {
+    const { data: sup } = await supabase
+      .from('suppliers')
+      .select('id')
+      .eq('id', data.supplier_id)
+      .single();
+    if (!sup) {
+      const err = new Error('Supplier tidak ditemukan');
+      err.status = 400;
+      throw err;
+    }
+  }
 
   const updates = {};
   const allowed = ['name', 'category_id', 'supplier_id', 'price', 'min_stock', 'max_stock', 'reorder_point', 'safety_stock', 'lead_time', 'unit', 'is_active'];
@@ -211,10 +332,23 @@ async function update(id, data) {
     .from('spareparts')
     .update(updates)
     .eq('id', id)
-    .select()
+    .select('*, categories(name), suppliers(name)')
     .single();
 
   if (error) throw error;
+
+  if (userId) {
+    await supabase.from('audit_logs').insert({
+      user_id: userId,
+      action: 'update',
+      entity_type: 'sparepart',
+      entity_id: id,
+      old_data: existing,
+      new_data: updated,
+      ip_address,
+    });
+  }
+
   return updated;
 }
 
@@ -439,40 +573,25 @@ async function bulkTransfer(data, userId) {
     const sp = sparepartMap[item.sparepart_id];
     const qty = Math.abs(Number(item.quantity));
 
-    const noteOut = notes || `Transfer bulk ke ${destBranch.name}`;
-    const noteIn = notes || `Transfer bulk dari ${sourceBranch.name}`;
-
-    const { data: outMovement, error: outErr } = await supabase
+    const { data: movement, error: movErr } = await supabase
       .from('stock_movements')
       .insert({
-        type: 'out', sparepart_id: item.sparepart_id,
-        branch_id: source_branch_id, quantity: qty,
-        notes: noteOut, created_by: userId,
+        type: 'transfer', sparepart_id: item.sparepart_id,
+        branch_id: source_branch_id, destination_branch_id,
+        quantity: qty, notes: notes || `Transfer bulk ke ${destBranch.name}`,
+        created_by: userId,
       })
       .select()
       .single();
 
-    if (outErr) throw outErr;
-
-    const { data: inMovement, error: inErr } = await supabase
-      .from('stock_movements')
-      .insert({
-        type: 'in', sparepart_id: item.sparepart_id,
-        branch_id: destination_branch_id, quantity: qty,
-        notes: noteIn, created_by: userId,
-      })
-      .select()
-      .single();
-
-    if (inErr) throw inErr;
+    if (movErr) throw movErr;
 
     results.push({
       sparepart_id: sp.id,
       code: sp.code,
       name: sp.name,
       quantity: qty,
-      out_movement_id: outMovement.id,
-      in_movement_id: inMovement.id,
+      movement_id: movement.id,
     });
   }
 

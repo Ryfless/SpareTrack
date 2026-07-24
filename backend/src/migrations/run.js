@@ -9,6 +9,8 @@ const MIGRATION_FILES = [
   '004_indexes.sql',
   '005_max_stock.sql',
   '006_fix_overstock.sql',
+  '007_theme_preference.sql',
+  '008_transfer_destination.sql',
 ];
 
 function getConnectionConfigs() {

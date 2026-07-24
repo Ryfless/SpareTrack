@@ -6,7 +6,7 @@ Kamu adalah backend & frontend engineer yang bertanggung jawab menambahkan filte
 
 ## Latar Belakang
 
-Saat ini hanya halaman Inventory yang punya filter branch. Halaman Transactions, Restock (PO list), dan Reports menampilkan data dari semua cabang tanpa filter. User super_admin perlu bisa memfilter per cabang.
+Saat ini hanya halaman Inventory yang punya filter    branch. Halaman Transactions, Restock (PO list), dan Reports menampilkan data dari semua cabang tanpa filter. User super_admin perlu bisa memfilter per cabang.
 
 ## Yang Harus Dihasilkan (Backend)
 

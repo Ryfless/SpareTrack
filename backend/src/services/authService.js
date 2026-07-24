@@ -15,7 +15,7 @@ async function registerUser(email, password, metadata) {
 
   if (createError) throw createError;
 
-  const { error: profileError } = await supabase.from('profiles').insert({
+  const { error: profileError } = await supabaseAdmin.from('profiles').insert({
     id: data.user.id,
     email,
     full_name: metadata.fullName,
@@ -39,7 +39,7 @@ async function loginUser(email, password) {
 
   if (signInError) throw signInError;
 
-  const { data: profile } = await supabase
+  const { data: profile } = await supabaseAdmin
     .from('profiles')
     .select('*')
     .eq('id', data.user.id)
@@ -76,7 +76,7 @@ async function signInWithGoogle() {
 }
 
 async function getProfile(userId) {
-  const { data, error: profileError } = await supabase
+  const { data, error: profileError } = await supabaseAdmin
     .from('profiles')
     .select('*')
     .eq('id', userId)
@@ -91,11 +91,12 @@ async function updateProfile(userId, data) {
   if (data.full_name !== undefined) updates.full_name = data.full_name;
   if (data.phone !== undefined) updates.phone = data.phone;
   if (data.branch !== undefined) updates.branch = data.branch;
+  if (data.theme_preference !== undefined) updates.theme_preference = data.theme_preference;
   updates.updated_at = new Date().toISOString();
 
   if (Object.keys(updates).length === 1) return getProfile(userId);
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .update(updates)
     .eq('id', userId);

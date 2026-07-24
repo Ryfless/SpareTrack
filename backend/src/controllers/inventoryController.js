@@ -1,5 +1,6 @@
 const inventoryService = require('../services/inventoryService');
 const { success, error } = require('../utils/response');
+const { getClientIp } = require('../utils/ip');
 
 exports.list = async (req, res, next) => {
   try {
@@ -31,7 +32,7 @@ exports.create = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const data = await inventoryService.update(req.params.id, req.body);
+    const data = await inventoryService.update(req.params.id, req.body, req.user?.id, getClientIp(req));
     if (!data) return error(res, 'Sparepart tidak ditemukan', null, 404);
     return success(res, data, 'Sparepart berhasil diupdate');
   } catch (err) {

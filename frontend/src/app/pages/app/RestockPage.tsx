@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Truck, Loader2, ClipboardList, CheckCircle, XCircle, PackageCheck, Trash2, RefreshCw, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
 import { PriorityBadge } from "../../components/shared/PriorityBadge";
 import { Skeleton } from "../../components/shared/Skeleton";
+import { BranchSelect } from "../../components/shared/BranchSelect";
 import { ReceiptView } from "../../components/ReceiptView";
 import { CreatePOModal } from "../../components/modals/CreatePOModal";
 import { PostponeModal } from "../../components/modals/PostponeModal";
 import { ConfirmApproveModal } from "../../components/modals/ConfirmApproveModal";
 import { ConfirmReceiveModal } from "../../components/modals/ConfirmReceiveModal";
 import { ConfirmCancelModal } from "../../components/modals/ConfirmCancelModal";
+import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import {
   getRecommendations, getPurchaseOrders, getPurchaseOrderDetail,
   approvePurchaseOrder, receivePurchaseOrder, cancelPurchaseOrder, generateRecommendations,
@@ -21,11 +23,16 @@ const TABS = [
   { id: 'po', label: 'Purchase Orders', icon: ClipboardList },
 ] as const;
 
-export function RestockPage() {
+interface Props {
+  userProfile?: { role: string; branch: string } | null;
+}
+
+export function RestockPage({ userProfile }: Props) {
   const [tab, setTab] = useState<'restock' | 'po'>('restock');
   const [items, setItems] = useState<RestockRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [poBranchFilter, setPOBranchFilter] = useState("");
 
   const [createPOItem, setCreatePOItem] = useState<RestockRecommendation | null>(null);
   const [postponeItem, setPostponeItem] = useState<RestockRecommendation | null>(null);
@@ -46,7 +53,7 @@ export function RestockPage() {
     setPOLoading(true);
     Promise.all([
       getRecommendations().catch(() => { toast.error("Gagal memuat rekomendasi"); return []; }),
-      getPurchaseOrders({ limit: 50 }).catch(() => ({ data: [] })),
+      getPurchaseOrders({ limit: 50, branch_id: poBranchFilter || undefined }).catch(() => ({ data: [] })),
     ]).then(([recs, poRes]) => {
       setItems(recs);
       setPOList(poRes.data || []);
@@ -56,20 +63,34 @@ export function RestockPage() {
     });
   }, []);
 
-  useEffect(() => {
-    if (tab === 'po') fetchPOList();
-  }, [tab]);
-
-  async function fetchPOList() {
+  const fetchPOList = useCallback(async () => {
     setPOLoading(true);
     try {
-      const res = await getPurchaseOrders({ limit: 50 });
+      const params: Record<string, string | number | undefined> = { limit: 50 };
+      if (poBranchFilter) params.branch_id = poBranchFilter;
+      const res = await getPurchaseOrders(params);
       setPOList(res.data ?? []);
     } catch {
       toast.error("Gagal memuat purchase order");
     }
     setPOLoading(false);
-  }
+  }, [poBranchFilter]);
+
+  useEffect(() => {
+    if (tab === 'po') fetchPOList();
+  }, [tab, fetchPOList]);
+
+  useEffect(() => {
+    if (tab === 'po') fetchPOList();
+  }, [poBranchFilter]);
+
+  useEffect(() => {
+    function onRefresh() { fetchPOList(); }
+    window.addEventListener('sparetrack:refresh', onRefresh);
+    return () => window.removeEventListener('sparetrack:refresh', onRefresh);
+  }, [fetchPOList]);
+
+  useAutoRefresh(fetchPOList, tab === 'po' ? 30 * 1000 : null, tab === 'po');
 
   async function handleGenerate() {
     setGenerating(true);
@@ -116,6 +137,7 @@ export function RestockPage() {
       toast.success(`PO ${receivePO.po_number} diterima — stok ditambahkan`);
       setReceivePO(null);
       await fetchPOList();
+      window.dispatchEvent(new CustomEvent('sparetrack:refresh'));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal menerima PO');
     }
@@ -241,13 +263,17 @@ export function RestockPage() {
       {/* Purchase Orders Tab */}
       {tab === 'po' && (
         <Card className="overflow-hidden">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <ClipboardList size={16} className="text-slate-500" />
               <h2 className="font-semibold text-slate-800 dark:text-slate-200">Purchase Orders</h2>
-              {poLoading && <Loader2 size={13} className="animate-spin text-slate-400" />}
+              {poLoading && <Skeleton className="h-4 w-16 inline-block" />}
             </div>
-            <span className="text-xs text-slate-400">{poList.length} PO</span>
+            <div className="flex items-center gap-2">
+              <BranchSelect value={poBranchFilter} onChange={setPOBranchFilter} role={userProfile?.role} userBranch={userProfile?.branch} />
+              <RefreshCw size={11} className="text-slate-400 animate-spin" />
+              <span className="text-xs text-slate-400">{poList.length} PO</span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
