@@ -5,14 +5,11 @@ import {
   ChevronRight, MapPin, AlertCircle, Clock, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card } from "../../components/shared/Card";
 import { KPICard } from "../../components/KPICard";
 import { Skeleton } from "../../components/shared/Skeleton";
-import { ChartTip } from "../../components/shared/ChartTip";
 import { getSummary, getRecentActivity } from "../../services/dashboard";
 import { list as fetchBranches } from "../../services/branches";
-import { getSeries } from "../../services/forecast";
 import { getRecommendations } from "../../services/restock";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { PageId } from "../../types";
@@ -22,24 +19,22 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
   const [kpi, setKpi] = useState({ total_spareparts: 0, total_branches: 0, total_stock: 0, total_value: 0, critical_stock: 0, low_stock: 0, overstock: 0, safe: 0 });
   const [activities, setActivities] = useState<Array<{ id: string; description: string; action: string; created_at: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string; city: string }>>([]);
-  const [forecastData, setForecastData] = useState<Array<{ month: string; predicted_quantity: number }>>([]);
+
   const [urgentRestock, setUrgentRestock] = useState(0);
   const [restockItems, setRestockItems] = useState<Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [summary, activities, branches, forecast, recs] = await Promise.all([
+      const [summary, activities, branches, recs] = await Promise.all([
         getSummary().catch(() => null),
         getRecentActivity().catch(() => []),
         fetchBranches().catch(() => []),
-        getSeries({ limit: 12 }).catch(() => []),
         getRecommendations({ limit: 10 }).catch(() => []),
       ]);
       if (summary?.kpi) setKpi(summary.kpi);
       setActivities(activities as Array<{ id: string; description: string; action: string; created_at: string }>);
       setBranches(branches as Array<{ id: string; name: string; city: string }>);
-      setForecastData((forecast as Array<{ month: string; predicted_quantity: number }>).map(f => ({ month: f.month.slice(0, 7), predicted_quantity: f.predicted_quantity })));
       const urgent = (recs as Array<{ urgency: string }>).filter(i => i.urgency === 'high' || i.urgency === 'critical');
       setUrgentRestock(urgent.length);
       setRestockItems(urgent as Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>);
@@ -165,30 +160,11 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
           </Card>
         </div>
       </div>
-      {/* Charts */}
+      {/* Aktivitas Terkini */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <Card className="lg:col-span-3 p-5">
           <div className="flex items-center justify-between mb-4">
-            <div><div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Demand Forecast</div><div className="text-xs text-slate-400 mt-0.5">Prediksi permintaan</div></div>
-            <span className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded-full font-semibold border border-blue-100 dark:border-blue-800">Forecast</span>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={forecastData.length > 0 ? forecastData : [{ month: "Jan", predicted_quantity: 0 }]} margin={{ top: 0, right: 8, left: -28, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0891b2" stopOpacity={0.15} /><stop offset="95%" stopColor="#0891b2" stopOpacity={0} /></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#94a3b8" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} />
-              <Tooltip content={<ChartTip />} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Area type="monotone" dataKey="predicted_quantity" name="Prediksi" stroke="#0891b2" strokeWidth={2} strokeDasharray="5 4" fill="url(#gS)" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card className="lg:col-span-2 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Aktivitas Terkini</div>
+            <div><div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Aktivitas Terkini</div></div>
             <button className="text-xs text-blue-600 hover:underline" onClick={() => onNavigate("transactions")}>Semua <ChevronRight size={11} className="inline" /></button>
           </div>
           <div className="space-y-3">

@@ -173,21 +173,14 @@ export function SettingsPage({ onEditProfile, darkMode, setDarkMode }: { onEditP
         {tab === "parameter" && (
           <Card className="p-6">
             <h3 className="font-bold text-slate-800 dark:text-slate-200 mb-1">Parameter Sistem Stok</h3>
-            <p className="text-xs text-slate-400 mb-5">Konfigurasi kalkulasi reorder dan prediksi SMA</p>
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 mb-5">
-              <div className="flex items-center gap-2 mb-3"><span className="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Model Forecasting</span><span className="text-xs px-2 py-0.5 bg-blue-700 text-white rounded-full font-semibold">SMA Aktif</span></div>
-              <FormField label="Periode SMA (bulan)"><div className="flex items-center gap-3"><input defaultValue={s?.['sma_period'] || '3'} type="number" min="1" max="12" className="w-20 px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200 text-center" /><span className="text-xs text-slate-500">bulan data historis</span></div></FormField>
-            </div>
+            <p className="text-xs text-slate-400 mb-5">Konfigurasi kalkulasi reorder point dan safety stock</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[["default_min_stock", s?.['default_min_stock'] || '10', "unit"],["safety_stock_multiplier", s?.['safety_stock_multiplier'] || '1.5', "×"],["reorder_point_multiplier", s?.['reorder_point_multiplier'] || '2.0', "×"],["buffer_lead_time", s?.['buffer_lead_time'] || '20', "%"]].map(([key, val, unit]) => (
                 <FormField key={key} label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}><div className="flex items-center gap-2"><input defaultValue={val} type="number" step="0.1" className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:border-blue-500 bg-white dark:bg-slate-800 dark:text-slate-200" /><span className="text-xs text-slate-400 shrink-0">{unit}</span></div></FormField>
               ))}
             </div>
             <button onClick={async () => {
-              const btn = document.activeElement as HTMLButtonElement;
               try {
-                const period = (document.querySelector('#param_sma') as HTMLInputElement)?.value || '3';
-                await updateSettings({ key: 'sma_period', value: Number(period) });
                 toast.success("Parameter sistem diperbarui");
               } catch { toast.error("Gagal menyimpan parameter"); }
             }} className="mt-5 flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Save size={13} />Simpan Parameter</button>

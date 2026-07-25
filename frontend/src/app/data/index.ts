@@ -31,16 +31,6 @@ export const restockRecommendations = [
 
 export type RestockItem = typeof restockRecommendations[0];
 
-export const forecastChartData = [
-  { period: "Jul'24", actual: 112, sma: null }, { period: "Agu'24", actual: 128, sma: null },
-  { period: "Sep'24", actual: 142, sma: 127  }, { period: "Okt'24", actual: 155, sma: 139  },
-  { period: "Nov'24", actual: 168, sma: 152  }, { period: "Des'24", actual: 183, sma: 165  },
-  { period: "Jan'25", actual: 145, sma: 172  }, { period: "Feb'25", actual: 158, sma: 165  },
-  { period: "Mar'25", actual: 172, sma: 159  }, { period: "Apr'25", actual: 188, sma: 168  },
-  { period: "Mei'25", actual: null, sma: 176 }, { period: "Jun'25", actual: null, sma: 183 },
-  { period: "Jul'25", actual: null, sma: 191 },
-];
-
 export const monthlyTrendData = [
   { month: "Jan", cabA: 280, cabB: 210, cabC: 165 }, { month: "Feb", cabA: 305, cabB: 228, cabC: 178 },
   { month: "Mar", cabA: 322, cabB: 215, cabC: 192 }, { month: "Apr", cabA: 310, cabB: 245, cabC: 188 },

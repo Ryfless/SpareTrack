@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpareTrack - ML Monitoring</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>SpareTrack ML</h1>
+      <span class="badge">XGBoost</span>
+    </div>
+    <div class="header-right">
+      <span id="lastTrained">Last trained: --</span>
+      <button id="btnPredict" onclick="triggerPredict()">Predict</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="table">Prediction Table</button>
+    <button class="tab" data-tab="trainlog">Training Log</button>
+  </nav>
+
+  <main>
+    <!-- ==================== TAB: Dashboard ==================== -->
+    <section id="tab-dashboard" class="tab-content active">
+      <div class="metrics-row" id="metricsRow">
+        <div class="metric-card"><div class="metric-value" id="m-mae">--</div><div class="metric-label">MAE</div></div>
+        <div class="metric-card"><div class="metric-value" id="m-rmse">--</div><div class="metric-label">RMSE</div></div>
+        <div class="metric-card"><div class="metric-value" id="m-r2">--</div><div class="metric-label">R²</div></div>
+        <div class="metric-card"><div class="metric-value" id="m-mape">--</div><div class="metric-label">MAPE (%)</div></div>
+        <div class="metric-card"><div class="metric-value" id="m-samples">--</div><div class="metric-label">Samples</div></div>
+      </div>
+
+      <div class="grid-2col">
+        <div class="card chart-card">
+          <h2>Feature Importance</h2>
+          <div class="chart-wrap"><canvas id="featureChart"></canvas></div>
+        </div>
+        <div class="card chart-card">
+          <h2>Predictions</h2>
+          <div class="chart-controls">
+            <select id="sparepartSelect" onchange="updatePredChart()">
+              <option value="">All spareparts</option>
+            </select>
+          </div>
+          <div class="chart-wrap"><canvas id="predChart"></canvas></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB: Prediction Table ==================== -->
+    <section id="tab-table" class="tab-content">
+      <div class="card">
+        <h2>Enriched Predictions</h2>
+        <div class="filter-bar">
+          <select id="ftSparepart"><option value="">All Sparepart</option></select>
+          <select id="ftBranch"><option value="">All Branch</option></select>
+          <select id="ftMonthFilter"><option value="">Semua Bulan</option></select>
+          <span class="filter-info" id="ftInfo">0 items</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Sparepart</th>
+                <th>Branch</th>
+                <th>Bulan</th>
+                <th>Stock</th>
+                <th>Predicted</th>
+                <th>Low</th>
+                <th>High</th>
+                <th>SS</th>
+                <th>ROP</th>
+                <th>EOQ</th>
+                <th>Max</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="ftBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="page-btn" id="ftPrev" onclick="pageTable(-1)">Prev</button>
+          <span id="ftPage">1 / 1</span>
+          <button class="page-btn" id="ftNext" onclick="pageTable(1)">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: Training Log ==================== -->
+    <section id="tab-trainlog" class="tab-content">
+      <div class="card">
+        <div class="train-header">
+          <h2>Model Training</h2>
+          <div class="train-controls">
+            <button id="btnTrain" onclick="triggerTrainAsync()">Train Now</button>
+            <span class="train-badge" id="trainStatusBadge">Ready</span>
+            <button class="tuning-toggle" id="btnTuningToggle" onclick="toggleTuning()">⚙ Tuning</button>
+          </div>
+        </div>
+        <div class="tuning-panel" id="tuningPanel">
+          <div class="tuning-grid" id="tuningGrid"></div>
+          <button class="tuning-reset" onclick="resetTuning()">Reset ke Default</button>
+        </div>
+        <div class="train-log-wrap">
+          <pre id="trainLogOutput">No training logs yet. Click "Train Now" to start.</pre>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Training Statistics</h2>
+        <div class="train-stats" id="trainStats">
+          <div class="train-stats-empty">Model belum ditrain.</div>
+        </div>
+        <div id="trainImportance" style="display:none;margin-top:16px">
+          <h3 style="font-size:12px;font-weight:600;color:#475569;margin-bottom:10px">Feature Importance</h3>
+          <div id="trainImportanceBars"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>
