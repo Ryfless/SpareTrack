@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const {
-  generate, summary, recommendations, detailRecommendation,
+  liveRecommendations, generate, summary, recommendations, detailRecommendation,
   approveRecommendation, rejectRecommendation, postponeRecommendation,
   purchaseOrders, createPurchaseOrder,
   purchaseOrderDetail, approvePO, receivePO, cancelPO,
@@ -10,6 +10,7 @@ const { authenticate, authorize } = require('../middlewares/auth');
 
 const router = Router();
 
+router.get('/live-recommendations', authenticate, liveRecommendations);
 router.post('/recommendations/generate', authenticate, authorize('super_admin'), generate);
 router.get('/summary', authenticate, summary);
 router.get('/recommendations', authenticate, recommendations);

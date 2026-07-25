@@ -13,11 +13,12 @@ import { AddItemModal } from "../../components/modals/AddItemModal";
 import { EditItemModal } from "../../components/modals/EditItemModal";
 import { BulkTransferModal } from "../../components/modals/BulkTransferModal";
 import { list as fetchInventory, exportCsv, type SparepartListItem } from "../../services/inventory";
+import { list as getBranches, type Branch } from "../../services/branches";
 import { getCategories, getSuppliers } from "../../services/references";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { ApiResponse } from "../../services/client";
 
-export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelectPart: (id: string) => void; initialFilter?: string }) {
+export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranch: externalBranch, onBranchChange }: { onSelectPart: (id: string) => void; initialFilter?: string; filterBranch?: string; onBranchChange?: (v: string) => void }) {
   const [items, setItems] = useState<SparepartListItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, total_pages: 0, counts: { total: 0, safe: 0, low: 0, critical: 0, overstock: 0 } });
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,10 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
   const [filterStatus, setFilterStatus] = useState(initialFilter);
   const [filterCat, setFilterCat] = useState("all");
   const [filterSup, setFilterSup] = useState("all");
+  const [localBranch, setLocalBranch] = useState("all");
+  const filterBranch = externalBranch ?? localBranch;
+  const setFilterBranch = onBranchChange ?? setLocalBranch;
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
   const [page, setPage] = useState(1);
@@ -42,6 +47,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
     Promise.all([
       getCategories().then(setCategories).catch(() => {}),
       getSuppliers().then(setSuppliers).catch(() => {}),
+      getBranches().then(setBranches).catch(() => {}),
     ]);
   }, []);
 
@@ -64,6 +70,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
         status: filterStatus !== "all" ? filterStatus : undefined,
         category_id: filterCat !== "all" ? filterCat : undefined,
         supplier_id: filterSup !== "all" ? filterSup : undefined,
+        branch_id: filterBranch !== "all" ? filterBranch : undefined,
         sort_by: sortBy,
         order: sortOrder,
       };
@@ -83,7 +90,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, filterStatus, filterCat, filterSup, sortBy, sortOrder]);
+  }, [page, debouncedSearch, filterStatus, filterCat, filterSup, filterBranch, sortBy, sortOrder]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -152,7 +159,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari sparepart atau kode..." className="w-full pl-8 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-700 transition text-slate-800 dark:text-slate-200" />
           </div>
           <button onClick={() => setFilterOpen(!filterOpen)} className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition ${filterOpen ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 text-blue-700" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100"}`}>
-            <Sliders size={13} />Filter{(filterStatus !== "all" || filterCat !== "all" || filterSup !== "all") && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+            <Sliders size={13} />Filter{(filterStatus !== "all" || filterCat !== "all" || filterSup !== "all" || filterBranch !== "all") && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
           </button>
           <button onClick={() => setAddOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah Item</button>
           <button onClick={async () => {
@@ -162,6 +169,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
                 status: filterStatus !== "all" ? filterStatus : undefined,
                 category_id: filterCat !== "all" ? filterCat : undefined,
                 supplier_id: filterSup !== "all" ? filterSup : undefined,
+                branch_id: filterBranch !== "all" ? filterBranch : undefined,
               });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -182,6 +190,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
               { l: "Status", v: filterStatus, set: (v: string) => { setFilterStatus(v); setPage(1); }, opts: [["all", "Semua Status"], ["safe", "Aman"], ["low", "Menipis"], ["critical", "Kritis"], ["overstock", "Overstock"]] as [string, string][] },
               { l: "Kategori", v: filterCat, set: (v: string) => { setFilterCat(v); setPage(1); }, opts: [["all", "Semua"], ...categories.map(c => [c.id, c.name] as [string, string])] },
               { l: "Supplier", v: filterSup, set: (v: string) => { setFilterSup(v); setPage(1); }, opts: [["all", "Semua"], ...suppliers.map(s => [s.id, s.name] as [string, string])] },
+              { l: "Cabang", v: filterBranch, set: (v: string) => { setFilterBranch(v); setPage(1); }, opts: [["all", "Semua"], ...branches.map(b => [b.id, b.name] as [string, string])] },
               { l: "Urutkan", v: sortBy + "|" + sortOrder, set: (v: string) => { const [s, o] = v.split("|"); setSortBy(s); setSortOrder(o); setPage(1); }, opts: [["name|asc", "Nama A–Z"], ["name|desc", "Nama Z–A"], ["code|asc", "Kode A–Z"], ["price|asc", "Harga ↑"], ["price|desc", "Harga ↓"], ["status|asc", "Status A–Z"], ["supplier|asc", "Supplier A–Z"], ["category|asc", "Kategori A–Z"]] as [string, string][] },
             ].map(f => (
               <div key={f.l}><label className="block text-xs text-slate-500 mb-1">{f.l}</label>
@@ -190,7 +199,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
                 </select>
               </div>
             ))}
-            <div className="flex items-end"><button onClick={() => { setFilterStatus("all"); setFilterCat("all"); setFilterSup("all"); setPage(1); }} className="text-xs text-blue-600 hover:underline">Reset filter</button></div>
+            <div className="flex items-end"><button onClick={() => { setFilterStatus("all"); setFilterCat("all"); setFilterSup("all"); setFilterBranch("all"); setPage(1); }} className="text-xs text-blue-600 hover:underline">Reset filter</button></div>
           </div>
         )}
       </Card>
@@ -199,29 +208,44 @@ export function InventoryPage({ onSelectPart, initialFilter = "all" }: { onSelec
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
               <th className="px-4 py-3 w-8"><input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleAll} className="rounded" /></th>
-              {["Kode", "Nama Sparepart", "Kategori", "Stok A", "Stok B", "Stok C", "Total", "Min Stok", "Max Stok", "Status", ""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{h}</th>)}
+              {(() => {
+                const branchNames = filterBranch === "all" && items.length > 0
+                  ? items[0].stock_by_branch.map(b => b.branch_name)
+                  : [];
+                const cols = filterBranch === "all"
+                  ? ["Kode", "Nama Sparepart", "Kategori", ...branchNames, "Total", "Status", ""]
+                  : ["Kode", "Nama Sparepart", "Kategori", "Stok", "Status", ""];
+                return cols.map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{h}</th>);
+              })()}
             </tr></thead>
             <tbody>
               {items.length === 0
-                ? <tr><td colSpan={11}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
+                ? <tr><td colSpan={filterBranch === "all" ? 6 + (items[0]?.stock_by_branch.length || branches.length) : 6}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
                 : items.map(part => {
-                    const stockA = part.stock_by_branch[0]?.quantity || 0;
-                    const stockB = part.stock_by_branch[1]?.quantity || 0;
-                    const stockC = part.stock_by_branch[2]?.quantity || 0;
+                    const branchNames = items[0]?.stock_by_branch.map(b => b.branch_name) || [];
+                    const stockByBranchName = Object.fromEntries(part.stock_by_branch.map(b => [b.branch_name, b.quantity]));
                     return (
                       <tr key={part.id} className={`border-b border-slate-50 dark:border-slate-800/50 hover:bg-blue-50/40 dark:hover:bg-blue-900/10 transition-colors ${selected.has(part.id) ? "bg-blue-50/60 dark:bg-blue-900/20" : ""}`}>
                         <td className="px-4 py-3" onClick={e => { e.stopPropagation(); toggleSelect(part.id); }}><input type="checkbox" checked={selected.has(part.id)} onChange={() => toggleSelect(part.id)} className="rounded" /></td>
                         <td className="px-4 py-3 text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.code}</td>
                         <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap cursor-pointer hover:text-blue-600 transition-colors" onClick={() => onSelectPart(part.id)}>{part.name}</td>
                         <td className="px-4 py-3 text-xs text-slate-500">{part.category}</td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{stockA}</td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{stockB}</td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{stockC}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-slate-800 dark:text-slate-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.total_stock}</td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.min_stock}</td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-400" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.max_stock ?? '-'}</td>
-                        <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
-                        <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
+                        {filterBranch === "all" ? (
+                          <>
+                            {branchNames.map(name => (
+                              <td key={name} className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{stockByBranchName[name] ?? 0}</td>
+                            ))}
+                            <td className="px-4 py-3 text-center font-semibold text-slate-800 dark:text-slate-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.total_stock}</td>
+                            <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
+                            <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.stock_by_branch[0]?.quantity ?? 0}</td>
+                            <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
+                            <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
+                          </>
+                        )}
                       </tr>
                     );
                   })

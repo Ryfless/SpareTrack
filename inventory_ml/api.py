@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import (
     HOLDING_COST_PCT,
+    LAST_PREDICT_PATH,
     METRICS_PATH,
     MODEL_PATH,
     PREDICTION_MONTHS,
@@ -127,36 +129,28 @@ def get_output():
         month_from = request.args.get("month_from")
         month_to = request.args.get("month_to")
 
-        if not os.path.exists(METRICS_PATH):
-            return jsonify({"error": "Model not trained yet"}), 400
-        with open(METRICS_PATH) as f:
-            metrics_data = json.load(f)
-        rmse = metrics_data["metrics"]["rmse"]
-
-        fetch_params = fetch_forecast_params()
-        z = float(fetch_params.get("service_level_z", SERVICE_LEVEL_Z))
-        holding_pct = float(fetch_params.get("holding_cost_pct", HOLDING_COST_PCT))
-
         spareparts = fetch_spareparts()
         branches = fetch_branches()
         stocks = fetch_branch_stocks()
 
-        stock_map = {}
+        bs_map = {}
         if not stocks.empty:
             for _, r in stocks.iterrows():
-                stock_map[(r["sparepart_id"], r["branch_id"])] = int(r["quantity"])
+                key = (r["sparepart_id"], r["branch_id"])
+                bs_map[key] = {
+                    "current_stock": int(r["quantity"]),
+                    "safety_stock": float(r.get("safety_stock", 0)),
+                    "reorder_point": float(r.get("reorder_point", 0)),
+                    "eoq": float(r.get("eoq", 0)),
+                    "max_stock": float(r.get("max_stock", 0)),
+                    "min_stock": float(r.get("min_stock", 0)),
+                }
 
-        lead_time_map = {}
-        price_map = {}
         name_map = {}
         code_map = {}
-        min_stock_map = {}
         for _, r in spareparts.iterrows():
-            lead_time_map[r["id"]] = int(r.get("lead_time", 3))
-            price_map[r["id"]] = float(r.get("price", 0))
             name_map[r["id"]] = r.get("name", "")
             code_map[r["id"]] = r.get("code", "")
-            min_stock_map[r["id"]] = int(r.get("min_stock", 10))
 
         runs = supabase.table("forecast_runs") \
             .select("id") \
@@ -187,6 +181,10 @@ def get_output():
         if not monthly_rows:
             return jsonify([])
 
+        branch_name_map = {}
+        for _, r in branches.iterrows():
+            branch_name_map[r["id"]] = r.get("name", "")
+
         enriched_params = {}
         for r in monthly_rows:
             sp_id = r["sparepart_id"]
@@ -194,33 +192,17 @@ def get_output():
             key = (sp_id, br_id)
             if key in enriched_params:
                 continue
-            predicted = float(r["predicted_quantity"])
-            lt = lead_time_map.get(sp_id, 3)
-            sp_price = price_map.get(sp_id, 0)
-            current_stock = stock_map.get(key, 0)
-            annual_demand = predicted * 12
-
-            demand_during_lt = predicted * (lt / 30)
-            safety_stock_val = round(z * rmse * math.sqrt(lt / 30), 2)
-            rop_val = round(demand_during_lt + safety_stock_val, 2)
-
-            holding_cost = sp_price * holding_pct
-            if holding_cost > 0 and sp_price > 0 and annual_demand > 0:
-                eoq_val = round(math.sqrt(2 * annual_demand * sp_price / holding_cost), 2)
-            else:
-                eoq_val = 0
-            max_stock_val = round(rop_val + eoq_val, 2)
-
+            bs = bs_map.get(key, {})
             enriched_params[key] = {
-                "safety_stock": safety_stock_val,
-                "reorder_point": rop_val,
-                "eoq": eoq_val,
-                "max_stock": max_stock_val,
-                "current_stock": current_stock,
+                "safety_stock": bs.get("safety_stock", 0),
+                "reorder_point": bs.get("reorder_point", 0),
+                "eoq": bs.get("eoq", 0),
+                "max_stock": bs.get("max_stock", 0),
+                "min_stock": bs.get("min_stock", 0),
+                "current_stock": bs.get("current_stock", 0),
                 "name": name_map.get(sp_id, ""),
                 "code": code_map.get(sp_id, ""),
-                "branch_name": r.get("branches", {}).get("name", ""),
-                "min_stock": min_stock_map.get(sp_id, 10),
+                "branch_name": branch_name_map.get(br_id, ""),
             }
 
         result = []
@@ -230,7 +212,7 @@ def get_output():
             ep = enriched_params.get((sp_id, br_id), {})
             predicted = float(r["predicted_quantity"])
             status = _compute_status(ep["current_stock"], ep["reorder_point"],
-                                     ep["max_stock"], ep["min_stock"])
+                                     ep["max_stock"], ep["safety_stock"])
             result.append({
                 "sparepart_id": sp_id,
                 "branch_id": br_id,
@@ -254,11 +236,11 @@ def get_output():
         return jsonify({"error": str(e)}), 500
 
 
-def _compute_status(current_stock, reorder_point, max_stock, min_stock):
-    if current_stock <= min_stock:
-        return "Kritis"
+def _compute_status(current_stock, reorder_point, max_stock, safety_stock):
     if current_stock <= reorder_point:
-        return "Perlu Restock"
+        return "Kritis"
+    if current_stock <= reorder_point + safety_stock:
+        return "Menipis"
     if current_stock >= max_stock:
         return "Overstock"
     return "Aman"
@@ -411,6 +393,213 @@ def get_train_log():
         })
 
 
+# ================================
+# AUTO-PREDICT SCHEDULER
+# ================================
+
+def _get_latest_movement_date():
+    resp = supabase.table("stock_movements") \
+        .select("created_at") \
+        .eq("type", "out") \
+        .order("created_at", desc=True) \
+        .limit(1) \
+        .execute()
+    rows = resp.data or []
+    if not rows:
+        return None
+    return rows[0]["created_at"]
+
+
+def _load_last_predict_state():
+    if os.path.exists(LAST_PREDICT_PATH):
+        with open(LAST_PREDICT_PATH) as f:
+            return json.load(f)
+    return {"last_movement_date": None, "last_predict_at": None}
+
+
+def _save_last_predict_state(state: dict):
+    os.makedirs(os.path.dirname(LAST_PREDICT_PATH), exist_ok=True)
+    with open(LAST_PREDICT_PATH, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def check_and_predict():
+    with app.app_context():
+        try:
+            state = _load_last_predict_state()
+            latest = _get_latest_movement_date()
+            if latest is None:
+                return
+
+            last_mov = state.get("last_movement_date")
+            if last_mov and latest <= last_mov:
+                return
+
+            model = load_model()
+            if model is None:
+                return
+
+            if not os.path.exists(METRICS_PATH):
+                return
+
+            with open(METRICS_PATH) as f:
+                metrics_data = json.load(f)
+            rmse = metrics_data["metrics"]["rmse"]
+            z = SERVICE_LEVEL_Z
+            fetch_params = fetch_forecast_params()
+            z = float(fetch_params.get("service_level_z", SERVICE_LEVEL_Z))
+            holding_pct = float(fetch_params.get("holding_cost_pct", HOLDING_COST_PCT))
+
+            movements = fetch_out_movements()
+            spareparts = fetch_spareparts()
+            branches = fetch_branches()
+            stocks = fetch_branch_stocks()
+
+            if movements.empty or spareparts.empty:
+                return
+
+            stock_map = {}
+            if not stocks.empty:
+                for _, r in stocks.iterrows():
+                    stock_map[(r["sparepart_id"], r["branch_id"])] = int(r["quantity"])
+
+            lead_time_map = {}
+            price_map = {}
+            for _, r in spareparts.iterrows():
+                lead_time_map[r["id"]] = int(r.get("lead_time", 3))
+                price_map[r["id"]] = float(r.get("price", 0))
+
+            history = build_features(movements, spareparts)
+            active_spareparts = spareparts["id"].tolist()
+            active_branches = branches["id"].tolist()
+
+            months = PREDICTION_MONTHS
+            now = datetime.now()
+            next_year = now.year + (now.month // 12)
+            next_month = (now.month % 12) + 1
+            period_start = f"{next_year}-{next_month:02d}-01"
+            period_end = (datetime(next_year, next_month, 1) + timedelta(days=31 * months)).strftime("%Y-%m-%d")
+            future_months = get_prediction_dates(period_start, period_end)[:months]
+
+            series_insert = []
+            dynamic_agg = {}
+            run_id = str(uuid.uuid4())
+
+            for sp_id in active_spareparts:
+                for br_id in active_branches:
+                    pf = build_prediction_features(sp_id, br_id, future_months, spareparts, history)
+                    if pf.empty:
+                        continue
+                    preds = predict_future(pf, model)
+                    lt = lead_time_map.get(sp_id, 3)
+                    sp_price = price_map.get(sp_id, 0)
+
+                    key = (sp_id, br_id)
+                    dynamic_agg[key] = {"preds": []}
+
+                    for i, row in pf.iterrows():
+                        val = max(0, float(preds[i]))
+                        confidence_lower = round(max(0, val - z * rmse), 2)
+                        confidence_upper = round(val + z * rmse, 2)
+                        safety_stock = round(z * rmse * math.sqrt(lt / 30), 2)
+                        annual_demand = val * 12
+
+                        demand_during_lt = val * (lt / 30)
+                        rop = round(demand_during_lt + safety_stock, 2)
+
+                        holding_cost = sp_price * holding_pct
+                        if holding_cost > 0 and sp_price > 0 and annual_demand > 0:
+                            eoq = round(math.sqrt(2 * annual_demand * sp_price / holding_cost), 2)
+                        else:
+                            eoq = 0
+
+                        series_insert.append({
+                            "forecast_run_id": run_id,
+                            "sparepart_id": sp_id,
+                            "branch_id": br_id,
+                            "month": row["month"],
+                            "predicted_quantity": round(val, 2),
+                            "confidence_lower": confidence_lower,
+                            "confidence_upper": confidence_upper,
+                        })
+
+                        dynamic_agg[key]["preds"].append({
+                            "safety": safety_stock, "rop": rop, "eoq": eoq,
+                        })
+
+            if not series_insert:
+                return
+
+            old_runs = supabase.table("forecast_runs") \
+                .select("id") \
+                .eq("method", "xgboost") \
+                .execute()
+            old_ids = [r["id"] for r in (old_runs.data or [])]
+            if old_ids:
+                supabase.table("forecast_series") \
+                    .delete() \
+                    .in_("forecast_run_id", old_ids) \
+                    .execute()
+
+            supabase.table("forecast_runs").insert({
+                "id": run_id,
+                "method": "xgboost",
+                "period_start": period_start,
+                "period_end": period_end,
+                "status": "completed",
+            }).execute()
+
+            BATCH = 100
+            for i in range(0, len(series_insert), BATCH):
+                supabase.table("forecast_series").insert(
+                    series_insert[i:i + BATCH]
+                ).execute()
+
+            _save_dynamic_params(dynamic_agg)
+
+            state["last_movement_date"] = latest
+            state["last_predict_at"] = datetime.now().isoformat()
+            _save_last_predict_state(state)
+
+            print(f"[AUTO] Predict completed: {len(series_insert)} items (new movement: {latest})")
+
+        except Exception as e:
+            print(f"[AUTO] Predict error: {e}")
+
+
+@app.route("/api/auto-status")
+def get_auto_status():
+    state = _load_last_predict_state()
+    return jsonify(state)
+
+
+def start_scheduler():
+    sched = BackgroundScheduler(daemon=True)
+    sched.add_job(check_and_predict, "interval", hours=1, id="auto_predict")
+    sched.start()
+    print("[SCHEDULER] Auto-predict every 1 hour")
+
+
+def _save_dynamic_params(sparepart_agg: dict):
+    for (sp_id, br_id), vals in sparepart_agg.items():
+        if not vals["preds"]:
+            continue
+        avg_rop = round(sum(v["rop"] for v in vals["preds"]) / len(vals["preds"]))
+        avg_eoq = round(sum(v["eoq"] for v in vals["preds"]) / len(vals["preds"]))
+        safety = round(vals["preds"][0]["safety"])
+        supabase.table("branch_stocks") \
+            .update({
+                "safety_stock": safety,
+                "reorder_point": avg_rop,
+                "eoq": avg_eoq,
+                "max_stock": round(avg_rop + avg_eoq),
+                "min_stock": avg_rop,
+            }) \
+            .eq("sparepart_id", sp_id) \
+            .eq("branch_id", br_id) \
+            .execute()
+
+
 @app.route("/api/predict", methods=["POST"])
 def predict():
     try:
@@ -456,13 +645,16 @@ def predict():
         active_spareparts = spareparts["id"].tolist()
         active_branches = branches["id"].tolist()
 
-        last_month = datetime.now().replace(day=1)
-        period_start = last_month.strftime("%Y-%m-%d")
-        period_end = (last_month + timedelta(days=30 * months)).strftime("%Y-%m-%d")
+        now = datetime.now()
+        next_year = now.year + (now.month // 12)
+        next_month = (now.month % 12) + 1
+        period_start = f"{next_year}-{next_month:02d}-01"
+        period_end = (datetime(next_year, next_month, 1) + timedelta(days=31 * months)).strftime("%Y-%m-%d")
         future_months = get_prediction_dates(period_start, period_end)[:months]
 
         series_insert = []
         enriched = []
+        dynamic_agg = {}
         run_id = str(uuid.uuid4())
 
         for sp_id in active_spareparts:
@@ -474,35 +666,33 @@ def predict():
                 lt = lead_time_map.get(sp_id, 3)
                 sp_price = price_map.get(sp_id, 0)
                 current_stock = stock_map.get((sp_id, br_id), 0)
+                sp_name = spareparts.loc[spareparts["id"] == sp_id, "name"].values[0] if not spareparts[spareparts["id"] == sp_id].empty else ""
+
+                key = (sp_id, br_id)
+                dynamic_agg[key] = {"preds": []}
 
                 for i, row in pf.iterrows():
                     val = max(0, float(preds[i]))
-
-                    predicted_monthly = val
-                    annual_demand = predicted_monthly * 12
-
-                    confidence_lower = round(max(0, predicted_monthly - z * rmse), 2)
-                    confidence_upper = round(predicted_monthly + z * rmse, 2)
-
-                    demand_during_lt = predicted_monthly * (lt / 30)
+                    annual_demand = val * 12
+                    confidence_lower = round(max(0, val - z * rmse), 2)
+                    confidence_upper = round(val + z * rmse, 2)
                     safety_stock = round(z * rmse * math.sqrt(lt / 30), 2)
+
+                    demand_during_lt = val * (lt / 30)
                     rop = round(demand_during_lt + safety_stock, 2)
 
                     holding_cost = sp_price * holding_pct
                     if holding_cost > 0 and sp_price > 0 and annual_demand > 0:
-                        eoq = round(
-                            math.sqrt(2 * annual_demand * sp_price / holding_cost), 2
-                        )
+                        eoq = round(math.sqrt(2 * annual_demand * sp_price / holding_cost), 2)
                     else:
                         eoq = 0
-                    max_stock = round(rop + eoq, 2)
 
                     series_insert.append({
                         "forecast_run_id": run_id,
                         "sparepart_id": sp_id,
                         "branch_id": br_id,
                         "month": row["month"],
-                        "predicted_quantity": round(predicted_monthly, 2),
+                        "predicted_quantity": round(val, 2),
                         "confidence_lower": confidence_lower,
                         "confidence_upper": confidence_upper,
                     })
@@ -511,23 +701,25 @@ def predict():
                         "sparepart_id": sp_id,
                         "branch_id": br_id,
                         "month": row["month"],
-                        "sparepart_name": spareparts.loc[
-                            spareparts["id"] == sp_id, "name"
-                        ].values[0] if not spareparts[spareparts["id"] == sp_id].empty else "",
+                        "sparepart_name": sp_name,
                         "current_stock": current_stock,
-                        "predicted_quantity": round(predicted_monthly, 2),
+                        "predicted_quantity": round(val, 2),
                         "confidence_lower": confidence_lower,
                         "confidence_upper": confidence_upper,
                         "safety_stock": safety_stock,
                         "reorder_point": rop,
                         "eoq": eoq,
-                        "max_stock": max_stock,
+                        "max_stock": round(rop + eoq, 2),
+                    })
+
+                    dynamic_agg[key]["preds"].append({
+                        "safety": safety_stock, "rop": rop, "eoq": eoq,
                     })
 
         if not series_insert:
             return jsonify({"error": "No predictions generated"}), 400
 
-        # hapus series lama (berdasarkan run_id xgboost), forecast_runs tetap untuk history
+        # hapus series lama (forecast_runs tetap)
         old_runs = supabase.table("forecast_runs") \
             .select("id") \
             .eq("method", "xgboost") \
@@ -552,6 +744,9 @@ def predict():
             supabase.table("forecast_series").insert(
                 series_insert[i:i + BATCH]
             ).execute()
+
+        # Simpan rata-rata dinamis ke branch_stocks
+        _save_dynamic_params(dynamic_agg)
 
         return jsonify({
             "success": True,
@@ -593,4 +788,5 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    start_scheduler()
+    app.run(host="0.0.0.0", port=5001, debug=True, use_reloader=False)

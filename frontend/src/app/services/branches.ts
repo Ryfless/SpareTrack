@@ -19,7 +19,6 @@ export interface BranchStockItem {
   unit: string;
   category: string;
   quantity: number;
-  min_stock: number;
   reorder_point: number;
   safety_stock: number;
   status: string;

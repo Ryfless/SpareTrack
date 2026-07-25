@@ -45,7 +45,7 @@ export function CreatePOModal({ item, onClose, onCreated }: CreatePOModalProps) 
         branch_id: item.branch_id,
         notes: `Restock ${item.name} — target tiba ${target}`,
         items: [{ sparepart_id: item.sparepart_id, quantity: Number(qty), unit_price: item.price }],
-        recommendation_id: item.id,
+        recommendation_id: item.id || undefined,
       });
       toast.success(`PO Restock ${item.name} dibuat`);
       onClose();

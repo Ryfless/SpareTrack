@@ -228,7 +228,7 @@ function applyTableFilters() {
 function statusHtml(status) {
   const s = (status || "aman").toLowerCase().replace(/\s+/g, "");
   const label = status || "Aman";
-  const cls = s === "kritis" ? "kritis" : s === "perlurestock" ? "restock" : s === "overstock" ? "overstock" : "aman";
+  const cls = s === "kritis" ? "kritis" : s === "menipis" ? "menipis" : s === "overstock" ? "overstock" : "aman";
   return `<span class="status-badge ${cls}">${escapeHtml(label)}</span>`;
 }
 

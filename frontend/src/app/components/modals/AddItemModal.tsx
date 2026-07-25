@@ -8,7 +8,7 @@ import { create as createSparepart } from "../../services/inventory";
 import { inputCls } from "../../config";
 
 export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState({ code: "", name: "", category_id: "", supplier_id: "", price: "", lead_time: "", min_stock: "", reorder_point: "", safety_stock: "" });
+  const [form, setForm] = useState({ code: "", name: "", category_id: "", supplier_id: "", price: "", lead_time: "", reorder_point: "", safety_stock: "" });
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const toastThrottle = useRef(0);
   const MAX_LEN: Record<string, number> = { code: 20, name: 20 };
-  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365, min_stock: 999999, reorder_point: 999999, safety_stock: 999999 };
+  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365, reorder_point: 999999, safety_stock: 999999 };
 
   function throttledToast(msg: string) {
     const now = Date.now();
@@ -54,13 +54,12 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
         category_id: form.category_id || undefined,
         supplier_id: form.supplier_id || undefined,
         price: form.price ? Number(form.price) : undefined,
-        min_stock: form.min_stock ? Number(form.min_stock) : undefined,
         reorder_point: form.reorder_point ? Number(form.reorder_point) : undefined,
         safety_stock: form.safety_stock ? Number(form.safety_stock) : undefined,
         lead_time: form.lead_time ? Number(form.lead_time) : undefined,
       });
       toast.success(`Sparepart "${form.name}" berhasil ditambahkan`);
-      setForm({ code: "", name: "", category_id: "", supplier_id: "", price: "", lead_time: "", min_stock: "", reorder_point: "", safety_stock: "" });
+      setForm({ code: "", name: "", category_id: "", supplier_id: "", price: "", lead_time: "", reorder_point: "", safety_stock: "" });
       window.dispatchEvent(new CustomEvent('sparetrack:refresh'));
       onClose();
     } catch { toast.error("Gagal menambahkan sparepart"); }
@@ -82,7 +81,6 @@ export function AddItemModal({ open, onClose }: { open: boolean; onClose: () => 
         </FormField>
         <FormField label="Harga (Rp)"><input value={form.price} onChange={set("price")} type="number" min="0" max="999999999" placeholder="0" className={inputCls} /></FormField>
         <FormField label="Lead Time (hari)"><input value={form.lead_time} onChange={set("lead_time")} type="number" min="0" max="365" placeholder="0" className={inputCls} /></FormField>
-        <FormField label="Min. Stok"><input value={form.min_stock} onChange={set("min_stock")} type="number" min="0" max="999999" className={inputCls} /></FormField>
         <FormField label="Reorder Point"><input value={form.reorder_point} onChange={set("reorder_point")} type="number" min="0" max="999999" className={inputCls} /></FormField>
         <FormField label="Safety Stock"><input value={form.safety_stock} onChange={set("safety_stock")} type="number" min="0" max="999999" className={inputCls} /></FormField>
       </div>

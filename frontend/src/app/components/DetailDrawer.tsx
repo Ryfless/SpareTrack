@@ -8,7 +8,7 @@ import { StokMasukModal } from "./modals/StokMasukModal";
 import { StokKeluarModal } from "./modals/StokKeluarModal";
 
 
-export function DetailDrawer({ partId, onClose }: { partId: string | null; onClose: () => void }) {
+export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId: string | null; onClose: () => void; filterBranch?: string }) {
   const [part, setPart] = useState<SparepartDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [stokMasukOpen, setStokMasukOpen] = useState(false);
@@ -51,13 +51,38 @@ export function DetailDrawer({ partId, onClose }: { partId: string | null; onClo
                 <div className="flex items-center gap-2 mt-1"><StatusBadge status={part.status} /><span className="text-xs text-slate-400">{part.category}</span></div>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {[{ l: "Total", v: part.total_stock }, { l: "Min Stok", v: part.min_stock }, { l: "Reorder Pt", v: part.reorder_point }].map(m => (
-                <div key={m.l} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
-                  <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{m.v}</div>
-                  <div className="text-xs text-slate-400 mt-1">{m.l}</div>
+            <div className="grid grid-cols-1 gap-2">
+              {filterBranch !== "all" ? (
+                (() => {
+                  const bs = part.stock_by_branch.find(s => s.branch_id === filterBranch);
+                  if (!bs) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{bs.quantity}</div>
+                        <div className="text-xs text-slate-400 mt-1">Stok</div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{bs.safety_stock}</div>
+                        <div className="text-xs text-slate-400 mt-1">Safety Stok</div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{bs.reorder_point}</div>
+                        <div className="text-xs text-slate-400 mt-1">Reorder Point</div>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{bs.max_stock}</div>
+                        <div className="text-xs text-slate-400 mt-1">Max Stok</div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-slate-800 dark:text-slate-200 leading-none" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.total_stock}</div>
+                  <div className="text-xs text-slate-400 mt-1">Total Stok</div>
                 </div>
-              ))}
+              )}
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2.5">Stok per Cabang</div>
@@ -69,7 +94,7 @@ export function DetailDrawer({ partId, onClose }: { partId: string | null; onClo
               ))}
             </div>
             <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-2 text-xs">
-              {[["Supplier", part.supplier], ["Harga", `Rp ${part.price.toLocaleString()}`], ["Lead Time", `${part.lead_time} hari`], ["Safety Stock", part.safety_stock.toString()]].map(([l, v]) => (
+              {[["Supplier", part.supplier], ["Harga", `Rp ${part.price.toLocaleString()}`], ["Lead Time", `${part.lead_time} hari`]].map(([l, v]) => (
                 <div key={l} className="flex justify-between"><span className="text-slate-400">{l}</span><span className="font-medium text-slate-700 dark:text-slate-300">{v}</span></div>
               ))}
             </div>

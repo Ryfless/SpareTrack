@@ -12,6 +12,14 @@ exports.generate = async (req, res, next) => {
   }
 };
 
+exports.liveRecommendations = async (req, res, next) => {
+  try {
+    const data = await restockService.getLiveRecommendations(req.query);
+    return success(res, data, 'OK');
+  } catch (err) {
+    next(err);
+  }
+};
 exports.summary = async (req, res, next) => {
   try {
     const data = await restockService.summary();

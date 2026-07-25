@@ -1,7 +1,7 @@
 # SpareTrack — Progress Summary
 
 **Multi-Branch Spare Parts Management System**  
-React + TypeScript (Frontend) · Express 5 + Supabase (Backend)
+React + TypeScript (Frontend) · Express 5 + Supabase (Backend) · Flask + XGBoost (ML)
 
 ---
 
@@ -12,7 +12,7 @@ SpareTrack adalah sistem manajemen sparepart multi-cabang dengan fitur:
 - Manajemen inventory & stok per cabang
 - Transaksi stok masuk/keluar/transfer/adjustment
 - Rekomendasi restock otomatis + Purchase Order
-- Forecasting (Simple Moving Average)
+- Forecasting XGBoost dengan dynamic thresholds + hyperparameter tuning
 - Dashboard, laporan, dan pengaturan sistem
 - Otentikasi via Google OAuth + Supabase Auth
 - Audit log untuk tracking aktivitas
@@ -42,104 +42,88 @@ SpareTrack adalah sistem manajemen sparepart multi-cabang dengan fitur:
 | **16 – Dark Mode Persistence** | Migration 007, profile CRUD via supabaseAdmin, localStorage init | ✅ Selesai |
 | **17 – Branch Filter** | BranchSelect per-page, filter Transactions/Restock/Reports | ✅ Selesai |
 | **18 – Loading Skeleton** | Standarisasi skeleton di Transactions, Restock, Dashboard, Branches | ✅ Selesai |
+| **19 – XGBoost Full Integration** | Forecast ML pipeline, dynamic thresholds, auto-predict, live restock dari forecast | ✅ Selesai |
 
 ---
 
 ## 3. Detail Capaian per Modul
 
-### 3.1. Database & Migration
+### 3.1. ML Pipeline — XGBoost (Python Flask)
 
-7 file migration berjalan idempotent:
+| Komponen | Detail |
+|----------|--------|
+| **Training** | `/api/train` — fetch data, feature engineering (lag 1-12, rolling mean 3/6/12), train XGBoost with tunable params |
+| **Hyperparameter Tuning** | 8 params slider UI (learning_rate, max_depth, n_estimators, subsample, colsample_bytree, min_child_weight, gamma, reg_lambda), persisted in localStorage, sent as JSON with train request |
+| **Prediction** | `/api/predict` — 3 months forward, confidence interval (predicted ± 1.96×RMSE), safety_stock (z×RMSE×√(LT/30)), ROP (demand_LT + safety), EOQ, max_stock |
+| **Dynamic Thresholds** | `_save_dynamic_params()` — average 3-month predictions → `UPDATE branch_stocks` per (sparepart, branch) as INT |
+| **Auto-Predict Scheduler** | APScheduler every 1 hour, checks `stock_movements.created_at` for new data, triggers predict if found, state in `models/last_predict.json` |
+| **Training Log & Stats** | `/api/train-log` — paginated history; `/api/model-stats` — best_iteration, best_score, num_features, num_trees; feature importance bar chart |
+| **Metrics** | `/api/metrics` — MAE, MSE, RMSE, MAPE, residuals_std; `/api/feature-importance` — gain × weight |
+| **Dashboard Output** | `/api/output` — reads thresholds from `branch_stocks` (via `bs_map`), status logic (Kritis/Menipis/Aman/Overstock), month filter, sorted A-Z by name then branch |
+
+**Key fixes**:
+- Training data filtered to `type = 'out'` only; NaN lags filled with 0 instead of dropped
+- `round()` used for all ML values (no decimals in DB)
+- `residual_std()` added to metrics
+- Status logic: Kritis (stock ≤ ROP), Menipis (ROP < stock ≤ ROP+safety), Overstock (stock ≥ max_stock), Aman otherwise
+
+### 3.2. Database & Migration
 
 | File | Isi |
 |------|-----|
 | `001_core_tables.sql` | Tabel: profiles, branches, categories, suppliers, spareparts, branch_stocks, stock_movements + seed data branch/category/supplier |
-| `003_restock_forecast_audit.sql` | Tabel: restock_recommendations, purchase_orders, purchase_order_items, forecast_runs, forecast_series, activities, audit_logs, notifications, api_tokens, settings + stock consistency trigger + 30 sparepart seed |
+| `003_restock_forecast_audit.sql` | Tabel: restock_recommendations, purchase_orders, purchase_order_items, forecast_runs, forecast_series, activities, audit_logs, notifications, api_tokens, settings + seed |
 | `004_indexes.sql` | 30+ performance indexes |
 | `005_max_stock.sql` | Kolom `max_stock` di spareparts |
 | `006_fix_overstock.sql` | Fix CHECK constraint tambah `overstock` |
 | `007_theme_preference.sql` | Kolom `theme_preference TEXT` di profiles |
+| `011_add_postpone_until.sql` | Kolom `postpone_until DATE` di restock_recommendations |
+| `012_branch_stocks_int.sql` | Migrasi `branch_stocks` columns (safety_stock, reorder_point, eoq, max_stock, min_stock) dari NUMERIC ke INT |
 
-### 3.2. Auth
+### 3.3. Backend REST API Changes
 
-- Google OAuth via Supabase — **redirect flow** (bukan popup)
-- `onAuthStateChange` listener di `App.tsx` untuk auto-sync session
-- Session management: login, logout, protected routes
-- Role-based: `super_admin`, `branch_admin`
-- Profile CRUD via `supabaseAdmin` (service role) — bypass RLS
-- Dark mode tersimpan di `profiles.theme_preference`
+**restockService.js** — `getLiveRecommendations()` rewritten:
+- Data source: `forecast_series` (latest run, 3-month `predicted_quantity`), not `branch_stocks`
+- Average predicted_quantity per (sparepart, branch) → `reorder_point`
+- Urgency: critical (stock ≤ avg), high (stock ≤ avg×2)
+- `recommended_qty`: critical = `avg×2 - stock` (target 2 bulan), high = `avg - stock` (target 1 bulan)
+- Setiap refresh: pending records di-delete dulu (clean slate), lalu re-insert dari forecast
+- Response dibangun langsung dari computed values + sparepart/branch info + DB id (untuk postpone/PO)
+- Fix `NUMERIC` → string type: `Number(f.predicted_quantity)` mencegah string concatenation
 
-### 3.3. REST API (Backend)
+**inventoryService.js** — `detail()`: `stock_by_branch` now includes `safety_stock`, `reorder_point`, `max_stock`, `min_stock` per branch
 
-| Module | Endpoints |
-|--------|-----------|
-| **Auth** | `POST /auth/login`, `/auth/google`, `/auth/logout`, `GET /me` |
-| **Dashboard** | `GET /dashboard/summary`, `/dashboard/activities` |
-| **Inventory** | `GET /inventory`, `GET /inventory/:id`, `POST /inventory`, `PATCH /inventory/:id`, `POST /inventory/:id/stock` |
-| **Branches** | `GET /branches`, `GET /branches/:id/stocks` |
-| **Transactions** | `GET /transactions`, `POST /transactions` |
-| **Restock** | `GET /restock/summary`, `POST /restock/recommendations/generate`, `GET /restock/recommendations`, `GET /restock/recommendations/:id`, `POST /restock/recommendations/:id/approve`, `POST /restock/recommendations/:id/reject`, `GET /restock/purchase-orders`, `POST /restock/purchase-orders`, `POST /restock/purchase-orders/:id/approve`, `POST /restock/purchase-orders/:id/receive`, `DELETE /restock/purchase-orders/:id` |
-| **Forecast** | `GET /forecast/runs`, `GET /forecast/runs/:id`, `POST /forecast/runs`, `GET /forecast/series` |
-| **Reports** | `GET /reports/summary`, `GET /reports/export/pdf`, `GET /reports/export/excel` |
-| **Audit Logs** | `GET /audit-logs` |
-| **Settings** | `GET /settings`, `PATCH /settings` |
-| **References** | `GET /categories`, `GET /suppliers` |
-| **Users** | `GET /users`, `POST /users`, `PATCH /users/:id`, `PATCH /users/:id/toggle-active` |
+**dashboardService.js** / **branchesService.js**: All threshold reads from `branch_stocks`
 
-Semua service menggunakan `supabaseAdmin` (service role key) untuk bypass RLS, kecuali auth operations yang tetap pakai `supabase`.
+**Transactions**: Explicit `sort_by=created_at&order=desc`
 
-### 3.4. Frontend Pages
+### 3.4. Frontend Changes
 
-| Halaman | Data dari API | Fitur Kunci |
-|---------|--------------|-------------|
-| **DashboardPage** | KPI, aktivitas, forecast, rekomendasi, branches | Action center, quick actions, demand forecast chart, restock urgent list |
-| **InventoryPage** | List sparepart + server-side filter + pagination | Search debounce, filter status/kategori/supplier/sort, DetailDrawer, stock modals, bulk transfer |
-| **TransactionsPage** | List transaksi + filter type + branch filter | Modals in/out/transfer, BranchSelect filter |
-| **RestockPage** | Rekomendasi restock + Purchase Orders | Group by urgency, generate, approve/reject, PO lifecycle (pending→approve→receive→cancel), Struk receipt |
-| **BranchesPage** | Cabang + stok per cabang + heatmap | Risk indicator, stock matrix heatmap |
-| **ReportsPage** | Summary laporan + date range + branch filter | KPI cards, critical items list, export PDF/Excel |
-| **SettingsPage** | Profil, settings, users, audit logs | Tabs general/appearance/notifikasi/parameter/pengguna/audit |
+| Halaman | Perubahan |
+|---------|-----------|
+| **InventoryPage** | Branch filter pindah dari pill buttons ke filter dropdown panel; `filterBranch` state di-lift ke App.tsx |
+| **DetailDrawer** | Menerima `filterBranch` prop; tampilkan threshold grid (Stok/Safety Stok/Reorder Point/Max Stok) 2×2 saat branch filter aktif |
+| **RestockPage** | Hapus "Generate" button; hapus `LiveCard` component (diganti `RecommendCard`); live data dari `getLiveRecommendations()` → `RestockRecommendation[]`; 2 segmen (Kritis red pulse, Menipis amber); Tunda button aktif; colored header (`h-1.5`) hanya di card postponed (amber) |
+| **TransactionsPage** | `sort_by: 'created_at'`, `order: 'desc'` eksplisit |
+| **App.tsx** | `inventoryBranch` state, passing ke InventoryPage dan DetailDrawer |
+| **restock.ts** | Hapus `LiveRestockItem`/`LiveRestockResponse`; `getLiveRecommendations()` return `RestockRecommendation[]` |
 
 ### 3.5. Perbaikan Kunci
 
-#### Inventory (Prompt 6 & 15)
-- Filter `supplier_id`, server-side filtering (status/kategori/supplier/search/sort)
-- Transfer flow: `destination_branch_id` → dual movement (`out` + `in`)
-- Pagination real dengan page/limit/total_pages
-- DetailDrawer: stok buttons buka modal, sparkline real, insight real
-- **Fix unmount**: `!selectedPart` dihapus dari kondisi render → page tetap mounted saat drawer terbuka
-- **Stock modal prefill**: sparepart otomatis terisi, dropdown sparepart disembunyikan, stok cabang tampil
-- **Pagination + status filter**: backend fetch all, enrich, filter in-memory, `.slice()` pagination → count akurat
-- **Status counts**: `computeStatusCounts()` → `meta.counts` di response → card baca dari sana
+#### NUMERIC to INT Migration
+- Kolom `safety_stock`, `reorder_point`, `eoq`, `max_stock`, `min_stock` di `branch_stocks` diubah dari NUMERIC ke INT
+- Semua ML values menggunakan `round()` → integer
+- Mencegah floating point issues di frontend
 
-#### Restock (Prompt 7, 10, 11, 14)
-- Generate rekomendasi: hitung stok, konsumsi 3 bulan, urgency, upsert
-- SMA forecast: 3-periode dari `stock_movements` (out) real, bukan random
-- PO lifecycle: **pending** → **approved** → **received** | **cancelled**
-- Approve: update status, **tidak update stock**
-- Receive: update stock per item + `stock_movements` insert
-- Cancel: validasi pending only, revert recommendation status ke `active`
-- **PO receipt (Struk)**: button di semua status PO, canvas-based ReceiptView
+#### Supabase NUMERIC String Handling
+- `forecast_series.predicted_quantity` = `NUMERIC(12,2)` → Supabase JS client return sebagai string
+- Fix: `Number(f.predicted_quantity)` sebelum arithmetic
+- Mencegah `NaN` values di card rekomendasi
 
-#### Branch Filter (Prompt 17)
-- `BranchSelect.tsx` — shared component di semua halaman
-- Filter by `branch_id` di Transactions, Restock (PO), Reports
-- Backend `reportsService.summary`: critical_items sekarang filter by `branch_id`
-- Branch admin auto-force ke cabangnya + disabled
-- Mock BRANCHES dropdown di navbar **dihapus**
-
-#### Dark Mode (Prompt 16)
-- Migration 007 tambah `theme_preference TEXT` di `profiles`
-- `authService.js`: profile ops pakai `supabaseAdmin`
-- `App.tsx`: init dari localStorage, fetch profile baca theme_preference, sync effect ke API
-- Error toast jika PATCH gagal
-
-#### Loading Skeleton (Prompt 18)
-- Semua halaman pakai `Skeleton` konsisten
-- Transactions: row-per-bar skeleton (6 baris × 7 kolom dengan lebar bervariasi)
-- Restock: ganti Loader2 spinner header PO → inline Skeleton
-- Dashboard: skeleton meliputi action center, quick actions, KPI cards, branch cards, chart, activity list, restock items
-- Tidak ada unused `Loader2` imports (kecuali action button processing)
+#### Restock Recommendation Reset
+- Setiap refresh tab restock: semua pending records di-delete, re-insert dari forecast_series
+- Non-pending (postponed/ordered/approved) tetap aman
+- Branch filter scoped delete jika branch filter aktif
 
 ---
 
@@ -149,40 +133,40 @@ Semua service menggunakan `supabaseAdmin` (service role key) untuk bypass RLS, k
 
 | Item | Alasan | Saran Implementasi |
 |------|--------|-------------------|
-| **Scheduled job auto-generate restock** | Rekomendasi masih manual via generate endpoint | Cron job / Supabase pg_cron harian |
-| **Notifikasi real-time** | Push notification belum terhubung | WebSocket atau Supabase Realtime |
-| **Bulk actions inventory** | Export/transfer/QR masih placeholder | Export CSV via backend, bulk transfer endpoint |
-| **max_stock UI** | Kolom max_stock ada di DB tapi belum ada form | Tambah field di AddItemModal / Edit sparepart form |
+| **XGBoost model saving & versioning** | Model saat ini hanya in-memory, hilang saat Flask restart | Save model to file/S3 + version tracking per run |
+| **Training data date range selector** | Pelatihan selalu pakai semua data, tidak ada filter periode | Tambah `start_date`/`end_date` di train request + slider UI |
+| **Scheduler auto-predict dashboard** | Status scheduler hanya lewat `/api/auto-status` tanpa UI | Dashboard card menampilkan last predict + trigger button |
+| **Notifikasi real-time** | Push notification belum terhubung | WebSocket atau Supabase Realtime untuk restock critical + PO events |
+| **max_stock UI** | Kolom max_stock ada di DB tapi belum ada form di frontend | Tambah field di AddItemModal / EditItemModal |
 
 ### 🟡 Medium Priority
 
 | Item | Alasan | Saran Implementasi |
 |------|--------|-------------------|
 | **Dashboard per-cabang** | Dashboard saat ini aggregate semua cabang | Tambah branch filter + KPI per cabang |
-| **Filter cabang di halaman Inventory** | InventoryPage belum punya BranchSelect | Tambah BranchSelect + filter by `branch_id` di inventoryService |
 | **Edit sparepart** | Belum ada modal edit untuk sparepart | PATCH endpoint + EditItemModal |
-| **PO item pricing** | unit_price di PO items bisa diisi manual + auto dari sparepart | Update CreatePOModal untuk set unit_price |
-| **Confirm dialog sebelum aksi** | Hapus PO, cancel, dll perlu konfirmasi | Standarisasi ConfirmModal untuk semua destructive action |
-| **Auto-refresh data** | Perlu refresh manual setelah aksi | WebSocket atau polling interval untuk stok/PO |
+| **Inline PO item pricing** | unit_price di PO items bisa diisi manual + auto dari sparepart | Update CreatePOModal untuk set unit_price dari sparepart price |
+| **Inventory stock history chart** | DetailDrawer sparkline masih terbatas | Integrasi dengan stock_movements untuk grafik historis |
+| **Validasi predictions** | Prediksi tidak divalidasi sebelum disimpan | Bandingkan prediction vs actual, feedback loop ke model |
 
 ### 🟢 Low Priority
 
 | Item | Saran Implementasi |
 |------|-------------------|
-| **Unit test backend** | Jest + supertest untuk semua service |
-| **Integration test frontend** | Vitest + React Testing Library |
-| **Docker setup** | Dockerfile + docker-compose untuk production |
+| **CPU/GPU fallback untuk model** | XGBoost bisa GPU-accelerated, fallback ke CPU |
+| **Export training report** | Export training results sebagai CSV/PDF |
+| **Unit test backend + ML** | Jest + supertest untuk Express, pytest untuk Flask |
+| **Docker setup** | Dockerfile + docker-compose (backend + frontend + ML) |
 | **CI/CD pipeline** | GitHub Actions untuk lint + build + test |
-| **API documentation** | OpenAPI/Swagger spec |
-| **Error tracking** | Sentry atau layanan monitoring |
-| **Cache layer** | Redis untuk dashboard/reports caching |
-| **Activity log di dashboard** | Recent activity masih terbatas |
+| **API documentation** | OpenAPI/Swagger spec untuk Express + Flask |
+| **Error tracking** | Sentry untuk frontend + backend |
+| **Cache layer** | Redis untuk dashboard/reports/Forecast output caching |
 
 ---
 
 ## 5. Catatan Teknis
 
-### Env Variables (`.env`)
+### Env Variables (`.env` — Backend)
 
 ```
 PORT=3001
@@ -192,6 +176,17 @@ SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_JWKS_URL=...
 DATABASE_URL=postgresql://postgres.[ref]:[password]@[host]:6543/postgres
 JWT_SECRET=...
+```
+
+### Env Variables (`.env` — ML)
+
+```
+SUPABASE_URL=https://[project].supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
+PREDICTION_MONTHS=3
+SERVICE_LEVEL_Z=1.96
+HOLDING_COST_PCT=0.15
+LAST_PREDICT_PATH=models/last_predict.json
 ```
 
 ### Migration Runner
@@ -205,15 +200,19 @@ Support `DATABASE_URL` env var, auto-fallback ke pooler Supabase.
 ### Development
 
 ```bash
-# Backend
+# Backend (Express)
 cd backend && npm start
 
-# Frontend
+# Frontend (Vite)
 cd frontend && npm run dev
+
+# ML (Flask)
+cd inventory_ml && python api.py
 ```
 
 ### Status Build
 
 ✅ Backend: Semua file JS lolos `node --check`  
 ✅ Frontend: Vite build sukses (2300+ modules)  
-✅ Database: 7 migration sukses
+✅ ML: Flask app running di port 5001, all endpoints responsive  
+✅ Database: 8 migration sukses (001–012)

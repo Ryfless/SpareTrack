@@ -54,6 +54,8 @@ export function TransactionsPage({ userProfile }: Props) {
       const params: Record<string, string | number | undefined> = {
         page,
         limit: 20,
+        sort_by: 'created_at',
+        order: 'desc',
       };
       if (typeFilter !== "all") params.type = typeFilter;
       if (branchFilter) params.branch_id = branchFilter;

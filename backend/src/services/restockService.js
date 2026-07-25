@@ -6,7 +6,7 @@ const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, overstock: 4 };
 async function generate(userId) {
   const { data: spareparts } = await supabase
     .from('spareparts')
-    .select('id, name, code, min_stock, reorder_point, safety_stock')
+    .select('id, name, code')
     .eq('is_active', true);
 
   if (!spareparts || spareparts.length === 0) return [];
@@ -20,12 +20,15 @@ async function generate(userId) {
     for (const br of branches) {
       const { data: stock } = await supabase
         .from('branch_stocks')
-        .select('quantity')
+        .select('quantity, safety_stock, reorder_point, min_stock')
         .eq('sparepart_id', sp.id)
         .eq('branch_id', br.id)
         .maybeSingle();
 
       const currentStock = stock?.quantity ?? 0;
+      const safetyStock = stock?.safety_stock || 0;
+      const reorderPoint = stock?.reorder_point || 0;
+      const minStock = stock?.min_stock || 0;
 
       const { data: movements } = await supabase
         .from('stock_movements')
@@ -43,16 +46,16 @@ async function generate(userId) {
       let urgency = 'medium';
       let recommendedQty = 0;
 
-      if (currentStock <= sp.safety_stock) {
+      if (currentStock <= safetyStock) {
         urgency = 'critical';
-        recommendedQty = sp.reorder_point * 2 - currentStock;
-      } else if (currentStock <= sp.reorder_point) {
+        recommendedQty = reorderPoint * 2 - currentStock;
+      } else if (currentStock <= reorderPoint) {
         urgency = 'high';
-        recommendedQty = sp.reorder_point * 2 - currentStock;
-      } else if (currentStock <= sp.reorder_point * 1.5) {
+        recommendedQty = reorderPoint * 2 - currentStock;
+      } else if (currentStock <= reorderPoint * 1.5) {
         urgency = 'medium';
-        recommendedQty = sp.reorder_point - currentStock;
-      } else if (currentStock >= sp.min_stock * 5) {
+        recommendedQty = reorderPoint - currentStock;
+      } else if (currentStock >= minStock * 5) {
         urgency = 'overstock';
         recommendedQty = 0;
       } else {
@@ -80,33 +83,33 @@ async function generate(userId) {
         .maybeSingle();
 
       if (existing) {
-        const { data: updated } = await supabase
-          .from('restock_recommendations')
-          .update({
-            current_stock: currentStock,
-            reorder_point: sp.reorder_point,
-            recommended_qty: recommendedQty,
-            urgency,
-            status: 'pending',
-            notes: notesParts.join('. '),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id)
-          .select()
-          .single();
-        if (updated) results.push(updated);
+          const { data: updated } = await supabase
+            .from('restock_recommendations')
+            .update({
+              current_stock: currentStock,
+              reorder_point: reorderPoint,
+              recommended_qty: recommendedQty,
+              urgency,
+              status: 'pending',
+              notes: notesParts.join('. '),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (updated) results.push(updated);
       } else {
         const { data: inserted } = await supabase
           .from('restock_recommendations')
-          .insert({
-            sparepart_id: sp.id,
-            branch_id: br.id,
-            current_stock: currentStock,
-            reorder_point: sp.reorder_point,
-            recommended_qty: recommendedQty,
-            urgency,
-            notes: notesParts.join('. '),
-          })
+            .insert({
+              sparepart_id: sp.id,
+              branch_id: br.id,
+              current_stock: currentStock,
+              reorder_point: reorderPoint,
+              recommended_qty: recommendedQty,
+              urgency,
+              notes: notesParts.join('. '),
+            })
           .select()
           .single();
         if (inserted) results.push(inserted);
@@ -135,6 +138,153 @@ async function generate(userId) {
   return results;
 }
 
+async function getLiveRecommendations({ branch_id }) {
+  const { data: runs } = await supabase
+    .from('forecast_runs')
+    .select('id')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (!runs || runs.length === 0) return [];
+
+  const runId = runs[0].id;
+
+  const { data: forecasts } = await supabase
+    .from('forecast_series')
+    .select('sparepart_id, branch_id, predicted_quantity')
+    .eq('forecast_run_id', runId);
+
+  if (!forecasts || forecasts.length === 0) return [];
+
+  const agg = {};
+  for (const f of forecasts) {
+    const key = `${f.sparepart_id}|${f.branch_id}`;
+    if (!agg[key]) agg[key] = { sparepart_id: f.sparepart_id, branch_id: f.branch_id, sum: 0, count: 0 };
+    agg[key].sum += Number(f.predicted_quantity);
+    agg[key].count++;
+  }
+
+  const spIds = [...new Set(forecasts.map(f => f.sparepart_id))];
+  const brIds = [...new Set(forecasts.map(f => f.branch_id))];
+
+  let stocksQry = supabase
+    .from('branch_stocks')
+    .select('sparepart_id, branch_id, quantity, spareparts!inner(code, name, price, unit), branches!inner(name)')
+    .in('sparepart_id', spIds)
+    .in('branch_id', brIds);
+
+  if (branch_id) stocksQry = stocksQry.eq('branch_id', branch_id);
+
+  const { data: allStocks } = await stocksQry;
+  if (!allStocks) return [];
+
+  const stockMap = {};
+  for (const s of allStocks) stockMap[`${s.sparepart_id}|${s.branch_id}`] = s;
+
+  const { data: activePOItems } = await supabase
+    .from('purchase_order_items')
+    .select('sparepart_id, purchase_orders!inner(branch_id, status)')
+    .in('purchase_orders.status', ['pending', 'approved']);
+
+  const excluded = new Set((activePOItems || []).map(
+    i => `${i.sparepart_id}|${i.purchase_orders.branch_id}`
+  ));
+
+  const delQry = supabase.from('restock_recommendations').delete().eq('status', 'pending');
+  if (branch_id) delQry.eq('branch_id', branch_id);
+  await delQry;
+
+  const results = [];
+
+  for (const [key, g] of Object.entries(agg)) {
+    if (excluded.has(key)) continue;
+    const stock = stockMap[key];
+    if (!stock) continue;
+
+    const avgPredicted = Math.round(g.sum / g.count);
+
+    if (stock.quantity > avgPredicted * 2) continue;
+
+    const urgency = stock.quantity <= avgPredicted ? 'critical' : 'high';
+    const recommendedQty = stock.quantity <= avgPredicted
+      ? Math.max(Math.round(avgPredicted * 2 - stock.quantity), 0)
+      : Math.max(Math.round(avgPredicted - stock.quantity), 0);
+
+    const notesParts = [];
+    if (urgency === 'critical') notesParts.push('Stok di bawah rata-rata prediksi permintaan — perlu restock segera');
+    else notesParts.push('Stok menipis — rata-rata prediksi permintaan perlu diantisipasi');
+
+    const { data: existing } = await supabase
+      .from('restock_recommendations')
+      .select('id')
+      .eq('sparepart_id', g.sparepart_id)
+      .eq('branch_id', g.branch_id)
+      .maybeSingle();
+
+    let recId;
+    if (existing) {
+      await supabase
+        .from('restock_recommendations')
+        .update({
+          current_stock: stock.quantity,
+          reorder_point: avgPredicted,
+          recommended_qty: recommendedQty,
+          urgency,
+          status: 'pending',
+          notes: notesParts.join('. '),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      recId = existing.id;
+    } else {
+      const { data: inserted } = await supabase
+        .from('restock_recommendations')
+        .insert({
+          sparepart_id: g.sparepart_id,
+          branch_id: g.branch_id,
+          current_stock: stock.quantity,
+          reorder_point: avgPredicted,
+          recommended_qty: recommendedQty,
+          urgency,
+          notes: notesParts.join('. '),
+        })
+        .select('id')
+        .single();
+      if (inserted) recId = inserted.id;
+    }
+
+    if (!recId) continue;
+
+    results.push({
+      id: recId,
+      sparepart_id: g.sparepart_id,
+      code: stock.spareparts?.code || '',
+      name: stock.spareparts?.name || '',
+      price: stock.spareparts?.price || 0,
+      unit: stock.spareparts?.unit || 'pcs',
+      lead_time: stock.spareparts?.lead_time || 0,
+      branch_id: g.branch_id,
+      branch_name: stock.branches?.name || '',
+      current_stock: stock.quantity,
+      reorder_point: avgPredicted,
+      recommended_qty: recommendedQty,
+      urgency,
+      status: 'pending',
+      notes: notesParts.join('. '),
+      postpone_reason: '',
+      postpone_until: null,
+      days_to_stockout: stock.quantity > 0
+        ? Math.round(stock.quantity / Math.max(recommendedQty / 30, 1))
+        : 0,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  const sorted = results
+    .sort((a, b) => (URGENCY_ORDER[a.urgency] || 99) - (URGENCY_ORDER[b.urgency] || 99));
+
+  return sorted;
+}
 async function summary() {
   const { data: all } = await supabase
     .from('restock_recommendations')
@@ -192,7 +342,7 @@ async function recommendations(query) {
 
   let qry = supabase
     .from('restock_recommendations')
-    .select('*, spareparts!inner(code, name, price, unit, min_stock, lead_time), branches!inner(name)')
+    .select('*, spareparts!inner(code, name, price, unit, lead_time), branches!inner(name)')
     .order('urgency', { ascending: true });
 
   if (branch_id) qry = qry.eq('branch_id', branch_id);
@@ -210,7 +360,6 @@ async function recommendations(query) {
       name: r.spareparts?.name || '',
       price: r.spareparts?.price || 0,
       unit: r.spareparts?.unit || 'pcs',
-      min_stock: r.spareparts?.min_stock || 0,
       lead_time: r.spareparts?.lead_time || 0,
       branch_id: r.branch_id,
       branch_name: r.branches?.name || '',
@@ -235,7 +384,7 @@ async function recommendations(query) {
 async function detailRecommendation(id) {
   const { data: r, error } = await supabase
     .from('restock_recommendations')
-    .select('*, spareparts!inner(*, categories(name), suppliers(name)), branches!inner(*)')
+    .select('*, spareparts!inner(id, name, code, price, unit, lead_time, categories(name), suppliers(name)), branches!inner(*)')
     .eq('id', id)
     .single();
 
@@ -248,7 +397,6 @@ async function detailRecommendation(id) {
     name: r.spareparts?.name || '',
     price: r.spareparts?.price || 0,
     unit: r.spareparts?.unit || 'pcs',
-    min_stock: r.spareparts?.min_stock || 0,
     lead_time: r.spareparts?.lead_time || 0,
     category: r.spareparts?.categories?.name || '',
     supplier: r.spareparts?.suppliers?.name || '',
@@ -733,7 +881,7 @@ async function cancelPurchaseOrder(poId, userId, ip_address = '') {
 }
 
 module.exports = {
-  generate, summary, recommendations, detailRecommendation,
+  getLiveRecommendations, generate, summary, recommendations, detailRecommendation,
   approveRecommendation, rejectRecommendation, postponeRecommendation,
   purchaseOrders, createPurchaseOrder,
   purchaseOrderDetail, approvePurchaseOrder, receivePurchaseOrder,

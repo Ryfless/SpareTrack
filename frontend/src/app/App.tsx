@@ -49,6 +49,7 @@ export default function App() {
   const [page, setPage] = useState<PageId>("dashboard");
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("all");
+  const [inventoryBranch, setInventoryBranch] = useState("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -257,7 +258,7 @@ export default function App() {
       <TransferModal   open={transferOpen}   onClose={() => setTransferOpen(false)}   />
       <EditProfileModal open={profileEditOpen} onClose={() => setProfileEditOpen(false)} onSaved={() => fetchProfile()} profile={userProfile} />
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onNavigate={navigate} onAction={quickAction} />
-      <DetailDrawer partId={selectedPart} onClose={() => setSelectedPart(null)} />
+      <DetailDrawer partId={selectedPart} onClose={() => setSelectedPart(null)} filterBranch={inventoryBranch} />
 
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
@@ -411,7 +412,7 @@ export default function App() {
         {/* CONTENT */}
         <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
           {page === "dashboard"    && !selectedPart && <DashboardPage onNavigate={navigate} onAction={quickAction} />}
-          {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} />}
+          {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} filterBranch={inventoryBranch} onBranchChange={setInventoryBranch} />}
           {page === "restock"      && !selectedPart && <RestockPage userProfile={userProfile} />}
           {page === "branches"     && !selectedPart && <BranchesPage />}
           {page === "transactions" && !selectedPart && <TransactionsPage userProfile={userProfile} />}

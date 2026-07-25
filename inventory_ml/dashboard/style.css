@@ -164,7 +164,7 @@ tbody tr:nth-child(even) { background: #fafbfc; }
 }
 .status-badge.aman { background: #d1fae5; color: #059669; }
 .status-badge.kritis { background: #fee2e2; color: #dc2626; }
-.status-badge.restock { background: #fef3c7; color: #d97706; }
+.status-badge.menipis { background: #fef3c7; color: #d97706; }
 .status-badge.overstock { background: #e0e7ff; color: #4f46e5; }
 
 .pagination {

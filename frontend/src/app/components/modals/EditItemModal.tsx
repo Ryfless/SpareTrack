@@ -8,7 +8,7 @@ import { getById, update as updateSparepart } from "../../services/inventory";
 import { inputCls } from "../../config";
 
 export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open: boolean; sparepartId: string | null; onClose: () => void; onSuccess: () => void }) {
-  const [form, setForm] = useState({ name: "", category_id: "", supplier_id: "", price: "", min_stock: "", max_stock: "", reorder_point: "", safety_stock: "", lead_time: "", unit: "pcs" });
+  const [form, setForm] = useState({ name: "", category_id: "", supplier_id: "", price: "", lead_time: "", unit: "pcs" });
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -29,10 +29,6 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
         category_id: part.category_id || "",
         supplier_id: part.supplier_id || "",
         price: part.price.toString(),
-        min_stock: part.min_stock.toString(),
-        max_stock: part.max_stock !== null ? part.max_stock.toString() : "",
-        reorder_point: part.reorder_point.toString(),
-        safety_stock: part.safety_stock.toString(),
         lead_time: part.lead_time.toString(),
         unit: part.unit || "pcs",
       });
@@ -42,7 +38,7 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
 
   const toastThrottle = useRef(0);
   const MAX_LEN: Record<string, number> = { name: 20 };
-  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365, min_stock: 999999, max_stock: 999999, reorder_point: 999999, safety_stock: 999999 };
+  const NUM_MAX: Record<string, number> = { price: 999999999, lead_time: 365 };
 
   function throttledToast(msg: string) {
     const now = Date.now();
@@ -63,7 +59,7 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
   async function submit() {
     if (!form.name) { toast.error("Nama sparepart wajib diisi"); return; }
     if (!form.category_id) { toast.error("Kategori wajib dipilih"); return; }
-    if (Number(form.price) < 0 || Number(form.min_stock) < 0) { toast.error("Angka tidak boleh negatif"); return; }
+    if (Number(form.price) < 0) { toast.error("Angka tidak boleh negatif"); return; }
     if (!sparepartId) return;
 
     setSubmitting(true);
@@ -73,10 +69,6 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
         category_id: form.category_id || undefined,
         supplier_id: form.supplier_id || undefined,
         price: form.price ? Number(form.price) : undefined,
-        min_stock: form.min_stock ? Number(form.min_stock) : undefined,
-        max_stock: form.max_stock ? Number(form.max_stock) : undefined,
-        reorder_point: form.reorder_point ? Number(form.reorder_point) : undefined,
-        safety_stock: form.safety_stock ? Number(form.safety_stock) : undefined,
         lead_time: form.lead_time ? Number(form.lead_time) : undefined,
         unit: form.unit || undefined,
       });
@@ -128,22 +120,7 @@ export function EditItemModal({ open, sparepartId, onClose, onSuccess }: { open:
               <input value={form.lead_time} onChange={set("lead_time")} type="number" min="0" max="365" placeholder="0" className={inputCls} />
               <p className="text-[10px] text-slate-400 mt-0.5">Estimasi hari pemesanan hingga tiba</p>
             </FormField>
-            <FormField label="Min. Stok">
-              <input value={form.min_stock} onChange={set("min_stock")} type="number" min="0" max="999999" className={inputCls} />
-              <p className="text-[10px] text-slate-400 mt-0.5">Batas minimal stok sebelum peringatan</p>
-            </FormField>
-            <FormField label="Max. Stok">
-              <input value={form.max_stock} onChange={set("max_stock")} type="number" min="0" max="999999" className={inputCls} />
-              <p className="text-[10px] text-slate-400 mt-0.5">Batas maksimal stok (overstock)</p>
-            </FormField>
-            <FormField label="Reorder Point">
-              <input value={form.reorder_point} onChange={set("reorder_point")} type="number" min="0" max="999999" className={inputCls} />
-              <p className="text-[10px] text-slate-400 mt-0.5">Titik stok yang memicu restock otomatis</p>
-            </FormField>
-            <FormField label="Safety Stock">
-              <input value={form.safety_stock} onChange={set("safety_stock")} type="number" min="0" max="999999" className={inputCls} />
-              <p className="text-[10px] text-slate-400 mt-0.5">Stok pengaman untuk antisipasi lonjakan</p>
-            </FormField>
+
           </div>
           <div className="flex gap-3 mt-5">
             <button onClick={submit} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70">

@@ -1,5 +1,10 @@
 import { api, type ApiResponse } from './client';
 
+export async function getLiveRecommendations(query: { branch_id?: string } = {}): Promise<RestockRecommendation[]> {
+  const response = await api.get<RestockRecommendation[]>('/restock/live-recommendations', query as Record<string, string | number | undefined>);
+  return response.data;
+}
+
 export interface RestockRecommendation {
   id: string;
   sparepart_id: string;
@@ -7,7 +12,6 @@ export interface RestockRecommendation {
   name: string;
   price: number;
   unit: string;
-  min_stock: number;
   lead_time: number;
   branch_id: string;
   branch_name: string;

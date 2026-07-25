@@ -24,7 +24,7 @@ async function getStocks(branchId, query) {
 
   let sparepartQuery = supabase
     .from('spareparts')
-    .select('id, code, name, price, min_stock, reorder_point, safety_stock, unit, categories(name)');
+    .select('id, code, name, price, unit, categories(name)');
 
   if (search) {
     sparepartQuery = sparepartQuery.or(`name.ilike.%${search}%,code.ilike.%${search}%`);
@@ -39,16 +39,19 @@ async function getStocks(branchId, query) {
   const result = await Promise.all((spareparts || []).map(async (sp) => {
     const { data: stock } = await supabase
       .from('branch_stocks')
-      .select('quantity')
+      .select('quantity, safety_stock, reorder_point, min_stock')
       .eq('sparepart_id', sp.id)
       .eq('branch_id', branchId)
       .maybeSingle();
 
     const qty = stock?.quantity || 0;
+    const safetyStock = stock?.safety_stock || 0;
+    const reorderPoint = stock?.reorder_point || 0;
+    const minStock = stock?.min_stock || 0;
     let itemStatus = 'safe';
-    if (qty <= sp.safety_stock) itemStatus = 'critical';
-    else if (qty <= sp.reorder_point) itemStatus = 'low';
-    else if (qty >= sp.min_stock * 5) itemStatus = 'overstock';
+    if (qty <= safetyStock) itemStatus = 'critical';
+    else if (qty <= reorderPoint) itemStatus = 'low';
+    else if (qty >= minStock * 5) itemStatus = 'overstock';
 
     if (status && itemStatus !== status) return null;
 
@@ -60,9 +63,8 @@ async function getStocks(branchId, query) {
       unit: sp.unit,
       category: sp.categories?.name || '',
       quantity: qty,
-      min_stock: sp.min_stock,
-      reorder_point: sp.reorder_point,
-      safety_stock: sp.safety_stock,
+      reorder_point: reorderPoint,
+      safety_stock: safetyStock,
       status: itemStatus,
     };
   }));

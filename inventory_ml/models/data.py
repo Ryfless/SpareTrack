@@ -35,7 +35,7 @@ def fetch_spareparts() -> pd.DataFrame:
 
 def fetch_branch_stocks() -> pd.DataFrame:
     resp = supabase.table("branch_stocks") \
-        .select("sparepart_id, branch_id, quantity") \
+        .select("sparepart_id, branch_id, quantity, safety_stock, reorder_point, eoq, max_stock, min_stock") \
         .execute()
     rows = resp.data or []
     return pd.DataFrame(rows) if rows else pd.DataFrame()

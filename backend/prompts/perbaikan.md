@@ -1,0 +1,8 @@
+- tambahan loading pada laman restock
+- perbaikan penghitungan card rekomendasi restock
+- perbaikan urutan kolom cabang pada laman inventory
+- status pada item drawer yang terfilter cabang menyesuaikan filter cabang
+- tammbahan filter untuk laman resock: filter by branch, filter by status (all, pending, approved, rejected)
+- sort restock recommendation card by a-z
+- masalah postponed card pada laman restock
+- penyesuaian warning pada filter cabang di laman inventory

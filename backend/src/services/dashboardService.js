@@ -17,32 +17,36 @@ async function getSummary(userId) {
   ]);
 
   let [spResult, bsResult] = await Promise.all([
-    supabase.from('spareparts').select('id, max_stock, min_stock, safety_stock, reorder_point, price').eq('is_active', true),
+    supabase.from('spareparts').select('id, price').eq('is_active', true),
     branchId
-      ? supabase.from('branch_stocks').select('quantity, sparepart_id').eq('branch_id', branchId)
-      : supabase.from('branch_stocks').select('quantity, sparepart_id'),
+      ? supabase.from('branch_stocks').select('quantity, safety_stock, reorder_point, max_stock, min_stock, sparepart_id').eq('branch_id', branchId)
+      : supabase.from('branch_stocks').select('quantity, safety_stock, reorder_point, max_stock, min_stock, sparepart_id'),
   ]);
 
   const spareparts = spResult.data || [];
   const branchStocks = bsResult.data || [];
 
-  const stockBySpId = {};
+  const bsBySp = {};
   for (const bs of branchStocks) {
-    if (!stockBySpId[bs.sparepart_id]) stockBySpId[bs.sparepart_id] = 0;
-    stockBySpId[bs.sparepart_id] += bs.quantity || 0;
+    if (!bsBySp[bs.sparepart_id]) bsBySp[bs.sparepart_id] = { total: 0, safety: 0, rop: 0, max: null, min: 0 };
+    bsBySp[bs.sparepart_id].total += bs.quantity || 0;
+    bsBySp[bs.sparepart_id].safety = Math.max(bsBySp[bs.sparepart_id].safety, bs.safety_stock || 0);
+    bsBySp[bs.sparepart_id].rop = Math.max(bsBySp[bs.sparepart_id].rop, bs.reorder_point || 0);
+    if (bs.max_stock) bsBySp[bs.sparepart_id].max = Math.max(bsBySp[bs.sparepart_id].max || 0, bs.max_stock);
+    bsBySp[bs.sparepart_id].min = Math.max(bsBySp[bs.sparepart_id].min, bs.min_stock || 0);
   }
 
   let totalStock = 0, totalValue = 0, critical = 0, low = 0, overstock = 0, safe = 0;
 
   for (const sp of spareparts) {
-    const qty = stockBySpId[sp.id] || 0;
-    totalStock += qty;
-    totalValue += qty * (Number(sp.price) || 0);
+    const bd = bsBySp[sp.id] || { total: 0, safety: 0, rop: 0, max: null, min: 0 };
+    totalStock += bd.total;
+    totalValue += bd.total * (Number(sp.price) || 0);
 
-    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
-    if (qty <= sp.safety_stock) critical++;
-    else if (qty <= sp.reorder_point) low++;
-    else if (qty >= overstockThreshold) overstock++;
+    const overstockThreshold = bd.max ?? bd.min * 5;
+    if (bd.total <= bd.safety) critical++;
+    else if (bd.total <= bd.rop) low++;
+    else if (bd.total >= overstockThreshold) overstock++;
     else safe++;
   }
 

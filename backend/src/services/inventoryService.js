@@ -5,7 +5,7 @@ const { sendNotification, sendNotificationToBranch } = require('./notificationSe
 async function computeStatusCounts() {
   const { data: spareparts } = await supabase
     .from('spareparts')
-    .select('id, max_stock, min_stock, safety_stock, reorder_point')
+    .select('id')
     .eq('is_active', true);
 
   if (!spareparts || spareparts.length === 0) {
@@ -17,16 +17,23 @@ async function computeStatusCounts() {
   await Promise.all(spareparts.map(async (sp) => {
     const { data: stocks } = await supabase
       .from('branch_stocks')
-      .select('quantity')
+      .select('quantity, safety_stock, reorder_point, max_stock, min_stock')
       .eq('sparepart_id', sp.id);
 
-    const totalStock = stocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
-    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
+    if (!stocks || stocks.length === 0) { counts.safe++; return; }
 
-    if (totalStock <= sp.safety_stock) counts.critical++;
-    else if (totalStock <= sp.reorder_point) counts.low++;
-    else if (totalStock >= overstockThreshold) counts.overstock++;
-    else counts.safe++;
+    let worstStatus = 'safe';
+    for (const s of stocks) {
+      const overstockThreshold = s.max_stock || s.min_stock * 5;
+      let st = 'safe';
+      if (s.quantity <= (s.safety_stock || 0)) st = 'critical';
+      else if (s.quantity <= (s.reorder_point || 0)) st = 'low';
+      else if (s.quantity >= overstockThreshold) st = 'overstock';
+      
+      const order = { critical: 0, low: 1, overstock: 2, safe: 3 };
+      if (order[st] < order[worstStatus]) worstStatus = st;
+    }
+    counts[worstStatus]++;
   }));
 
   return counts;
@@ -95,11 +102,24 @@ async function list(query) {
         quantity: s.quantity,
       })) || [];
 
-      const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
-      let itemStatus = 'safe';
-      if (totalStock <= sp.safety_stock) itemStatus = 'critical';
-      else if (totalStock <= sp.reorder_point) itemStatus = 'low';
-      else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+      let bsQry = supabase
+        .from('branch_stocks')
+        .select('quantity, safety_stock, reorder_point, max_stock, min_stock')
+        .eq('sparepart_id', sp.id);
+      if (branch_id) bsQry = bsQry.eq('branch_id', branch_id);
+      const { data: branchStocks } = await bsQry;
+
+      let worstStatus = 'safe';
+      for (const bs of branchStocks || []) {
+        const ot = bs.max_stock || bs.min_stock * 5;
+        let st = 'safe';
+        if (bs.quantity <= (bs.safety_stock || 0)) st = 'critical';
+        else if (bs.quantity <= (bs.reorder_point || 0)) st = 'low';
+        else if (bs.quantity >= ot) st = 'overstock';
+        const order = { critical: 0, low: 1, overstock: 2, safe: 3 };
+        if (order[st] < order[worstStatus]) worstStatus = st;
+      }
+      let itemStatus = worstStatus;
 
       if (itemStatus !== status) return null;
 
@@ -160,11 +180,24 @@ async function list(query) {
       quantity: s.quantity,
     })) || [];
 
-    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
-    let itemStatus = 'safe';
-    if (totalStock <= sp.safety_stock) itemStatus = 'critical';
-    else if (totalStock <= sp.reorder_point) itemStatus = 'low';
-    else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+    let bsQry = supabase
+      .from('branch_stocks')
+      .select('quantity, safety_stock, reorder_point, max_stock, min_stock')
+      .eq('sparepart_id', sp.id);
+    if (branch_id) bsQry = bsQry.eq('branch_id', branch_id);
+    const { data: branchStocks } = await bsQry;
+
+    let worstStatus = 'safe';
+    for (const bs of branchStocks || []) {
+      const ot = bs.max_stock || bs.min_stock * 5;
+      let st = 'safe';
+      if (bs.quantity <= (bs.safety_stock || 0)) st = 'critical';
+      else if (bs.quantity <= (bs.reorder_point || 0)) st = 'low';
+      else if (bs.quantity >= ot) st = 'overstock';
+      const order = { critical: 0, low: 1, overstock: 2, safe: 3 };
+      if (order[st] < order[worstStatus]) worstStatus = st;
+    }
+    let itemStatus = worstStatus;
 
     return {
       ...sp,
@@ -206,11 +239,6 @@ async function detail(id) {
 
   if (error) return null;
 
-  const { data: stocks } = await supabase
-    .from('branch_stocks')
-    .select('quantity, branches(id, name)')
-    .eq('sparepart_id', id);
-
   const { data: movements } = await supabase
     .from('stock_movements')
     .select('*, profiles(full_name)')
@@ -218,24 +246,40 @@ async function detail(id) {
     .order('created_at', { ascending: false })
     .limit(20);
 
-  const totalStock = stocks?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+  const { data: branchStocks } = await supabase
+    .from('branch_stocks')
+    .select('quantity, safety_stock, reorder_point, max_stock, min_stock, branches(id, name)')
+    .eq('sparepart_id', id);
 
-  const overstockThreshold = sparepart.max_stock ?? sparepart.min_stock * 5;
   let itemStatus = 'safe';
-  if (totalStock <= sparepart.safety_stock) itemStatus = 'critical';
-  else if (totalStock <= sparepart.reorder_point) itemStatus = 'low';
-  else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+  let stockByBranch = [];
+  let totalStock = 0;
+  for (const s of branchStocks || []) {
+    totalStock += s.quantity || 0;
+    stockByBranch.push({
+      branch_id: s.branches?.id || '',
+      branch_name: s.branches?.name || '',
+      quantity: s.quantity || 0,
+      safety_stock: s.safety_stock || 0,
+      reorder_point: s.reorder_point || 0,
+      max_stock: s.max_stock || 0,
+      min_stock: s.min_stock || 0,
+    });
+    const ot = s.max_stock || s.min_stock * 5;
+    let st = 'safe';
+    if (s.quantity <= (s.safety_stock || 0)) st = 'critical';
+    else if (s.quantity <= (s.reorder_point || 0)) st = 'low';
+    else if (s.quantity >= ot) st = 'overstock';
+    const order = { critical: 0, low: 1, overstock: 2, safe: 3 };
+    if (order[st] < order[itemStatus]) itemStatus = st;
+  }
 
   return {
     ...sparepart,
     category: sparepart.categories?.name || '',
     supplier: sparepart.suppliers?.name || '',
     total_stock: totalStock,
-    stock_by_branch: stocks?.map(s => ({
-      branch_id: s.branches.id,
-      branch_name: s.branches.name,
-      quantity: s.quantity,
-    })) || [],
+    stock_by_branch: stockByBranch,
     status: itemStatus,
     recent_movements: movements?.map(m => ({
       id: m.id,
@@ -249,7 +293,7 @@ async function detail(id) {
 }
 
 async function create(data) {
-  const { code, name, category_id, supplier_id, price, min_stock, reorder_point, safety_stock, lead_time, unit, max_stock } = data;
+  const { code, name, category_id, supplier_id, price, lead_time, unit } = data;
 
   if (!code || !name) {
     const err = new Error('code dan name wajib diisi');
@@ -264,12 +308,8 @@ async function create(data) {
       category_id: category_id || null,
       supplier_id: supplier_id || null,
       price: price || 0,
-      min_stock: min_stock || 10,
-      reorder_point: reorder_point || 20,
-      safety_stock: safety_stock || 5,
       lead_time: lead_time || 3,
       unit: unit || 'pcs',
-      max_stock: max_stock || null,
     })
     .select()
     .single();
@@ -322,7 +362,7 @@ async function update(id, data, userId, ip_address = '') {
   }
 
   const updates = {};
-  const allowed = ['name', 'category_id', 'supplier_id', 'price', 'min_stock', 'max_stock', 'reorder_point', 'safety_stock', 'lead_time', 'unit', 'is_active'];
+  const allowed = ['name', 'category_id', 'supplier_id', 'price', 'lead_time', 'unit', 'is_active'];
   for (const key of allowed) {
     if (data[key] !== undefined) updates[key] = data[key];
   }
@@ -428,16 +468,21 @@ async function exportCsv(query, res) {
   for (const sp of spareparts) {
     const { data: stocks } = await supabase
       .from('branch_stocks')
-      .select('quantity')
+      .select('quantity, safety_stock, reorder_point, max_stock, min_stock')
       .eq('sparepart_id', sp.id);
 
-    const totalStock = stocks?.reduce((s, st) => s + st.quantity, 0) || 0;
-    const overstockThreshold = sp.max_stock ?? sp.min_stock * 5;
-
-    let itemStatus = 'safe';
-    if (totalStock <= sp.safety_stock) itemStatus = 'critical';
-    else if (totalStock <= sp.reorder_point) itemStatus = 'low';
-    else if (totalStock >= overstockThreshold) itemStatus = 'overstock';
+    let worstStatus = 'safe';
+    for (const s of stocks || []) {
+      const ot = s.max_stock || s.min_stock * 5;
+      let st = 'safe';
+      if (s.quantity <= (s.safety_stock || 0)) st = 'critical';
+      else if (s.quantity <= (s.reorder_point || 0)) st = 'low';
+      else if (s.quantity >= ot) st = 'overstock';
+      const order = { critical: 0, low: 1, overstock: 2, safe: 3 };
+      if (order[st] < order[worstStatus]) worstStatus = st;
+    }
+    let itemStatus = worstStatus;
+    const totalStock = stocks?.reduce((s, st) => s + (st.quantity || 0), 0) || 0;
 
     if (status && itemStatus !== status) continue;
 
@@ -447,9 +492,6 @@ async function exportCsv(query, res) {
       category: sp.categories?.name || '',
       supplier: sp.suppliers?.name || '',
       price: sp.price,
-      min_stock: sp.min_stock,
-      reorder_point: sp.reorder_point,
-      safety_stock: sp.safety_stock,
       total_stock: totalStock,
       status: itemStatus,
     });
@@ -463,9 +505,6 @@ async function exportCsv(query, res) {
       { key: 'category', header: 'Kategori' },
       { key: 'supplier', header: 'Supplier' },
       { key: 'price', header: 'Harga' },
-      { key: 'min_stock', header: 'Min Stok' },
-      { key: 'reorder_point', header: 'Reorder Point' },
-      { key: 'safety_stock', header: 'Safety Stock' },
       { key: 'total_stock', header: 'Total Stok' },
       { key: 'status', header: 'Status' },
     ],

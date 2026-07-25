@@ -8,10 +8,6 @@ export interface SparepartListItem {
   category: string;
   supplier: string;
   price: number;
-  min_stock: number;
-  max_stock: number | null;
-  reorder_point: number;
-  safety_stock: number;
   lead_time: number;
   unit: string;
   is_active: boolean;
@@ -34,10 +30,6 @@ export interface SparepartDetail {
   category_id?: string;
   supplier_id?: string;
   price: number;
-  min_stock: number;
-  max_stock: number | null;
-  reorder_point: number;
-  safety_stock: number;
   lead_time: number;
   unit: string;
   is_active: boolean;
@@ -46,6 +38,10 @@ export interface SparepartDetail {
     branch_id: string;
     branch_name: string;
     quantity: number;
+    safety_stock: number;
+    reorder_point: number;
+    max_stock: number;
+    min_stock: number;
   }>;
   status: string;
   recent_movements: Array<{
@@ -88,8 +84,6 @@ export interface CreateSparepartData {
   category_id?: string;
   supplier_id?: string;
   price?: number;
-  min_stock?: number;
-  max_stock?: number;
   reorder_point?: number;
   safety_stock?: number;
   lead_time?: number;
