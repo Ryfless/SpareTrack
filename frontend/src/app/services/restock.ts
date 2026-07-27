@@ -48,11 +48,6 @@ export async function postponeRecommendation(id: string, postpone_reason?: strin
   return response.data;
 }
 
-export async function approveRecommendation(id: string): Promise<RestockRecommendation> {
-  const response = await api.post<RestockRecommendation>(`/restock/recommendations/${id}/approve`);
-  return response.data;
-}
-
 export interface PurchaseOrder {
   id: string;
   po_number: string;

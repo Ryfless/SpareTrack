@@ -1,6 +1,12 @@
 import { api } from './client';
 import { supabase } from './supabase';
 
+export interface MonthlyTrendItem {
+  month: string;
+  units: number;
+  revenue: number;
+}
+
 export interface ReportSummary {
   period: { start: string; end: string };
   stock_movements: {
@@ -19,6 +25,12 @@ export interface ReportSummary {
       branch: string;
       quantity: number;
     }>;
+  };
+  monthly_trend: MonthlyTrendItem[];
+  top_sparepart: {
+    name: string;
+    total_sold: number;
+    avg_monthly: number;
   };
 }
 

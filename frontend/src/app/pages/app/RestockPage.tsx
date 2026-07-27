@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Truck, Loader2, ClipboardList, CheckCircle, XCircle, PackageCheck, Trash2, RefreshCw, Receipt, Play, Clock } from "lucide-react";
+import { Truck, Loader2, ClipboardList, CheckCircle, XCircle, PackageCheck, PackageSearch, Trash2, RefreshCw, Receipt, Play, Clock, ArrowUpDown, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
 import { PriorityBadge } from "../../components/shared/PriorityBadge";
-import { Skeleton } from "../../components/shared/Skeleton";
+import { Skeleton, RecommendCardSkeleton } from "../../components/shared/Skeleton";
 import { BranchSelect } from "../../components/shared/BranchSelect";
+import { Tooltip } from "../../components/shared/Tooltip";
 import { ReceiptView } from "../../components/ReceiptView";
 import { CreatePOModal } from "../../components/modals/CreatePOModal";
 import { PostponeModal } from "../../components/modals/PostponeModal";
@@ -29,13 +30,15 @@ const TABS: { id: TabId; label: string; icon: React.FC<{ size?: number }> }[] = 
 
 interface Props {
   userProfile?: { role: string; branch: string } | null;
+  scrollTo?: string;
 }
 
-export function RestockPage({ userProfile }: Props) {
+export function RestockPage({ userProfile, scrollTo }: Props) {
   const [tab, setTab] = useState<TabId>('restock');
   const [items, setItems] = useState<RestockRecommendation[]>([]);
   const [liveData, setLiveData] = useState<RestockRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [liveLoading, setLiveLoading] = useState(true);
   const [poBranchFilter, setPOBranchFilter] = useState("");
   const [recBranchFilter, setRecBranchFilter] = useState("");
 
@@ -52,6 +55,22 @@ export function RestockPage({ userProfile }: Props) {
 
   const [poList, setPOList] = useState<PurchaseOrder[]>([]);
   const [poLoading, setPOLoading] = useState(false);
+  const [urgencyFilter, setUrgencyFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("qty_desc");
+
+  function applyFilters(data: RestockRecommendation[]) {
+    let filtered = data;
+    if (urgencyFilter !== "all") {
+      filtered = filtered.filter(i => i.urgency === urgencyFilter);
+    }
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "name_asc") return a.name.localeCompare(b.name);
+      if (sortBy === "name_desc") return b.name.localeCompare(a.name);
+      if (sortBy === "qty_desc") return b.recommended_qty - a.recommended_qty;
+      return 0;
+    });
+    return sorted;
+  }
 
   const fetchRecs = useCallback(async () => {
     setLoading(true);
@@ -63,16 +82,18 @@ export function RestockPage({ userProfile }: Props) {
   }, [recBranchFilter]);
 
   const fetchLive = useCallback(async () => {
+    setLiveLoading(true);
     try {
       const data = await getLiveRecommendations({ branch_id: recBranchFilter || undefined });
       setLiveData(data);
     } catch { /* silent — auto-refresh handles retry */ }
+    setLiveLoading(false);
   }, [recBranchFilter]);
 
   useEffect(() => {
     if (tab === 'restock') fetchLive();
     if (tab === 'postponed') fetchRecs();
-  }, [tab, fetchLive, fetchRecs]);
+  }, [tab, fetchLive, fetchRecs]);~
 
   useEffect(() => {
     if (tab === 'restock') fetchLive();
@@ -106,14 +127,21 @@ export function RestockPage({ userProfile }: Props) {
     return () => window.removeEventListener('sparetrack:refresh', onRefresh);
   }, [fetchPOList]);
 
-  useAutoRefresh(tab === 'restock' ? fetchLive : fetchRecs, (tab === 'restock' || tab === 'postponed') ? 30 * 1000 : null, tab === 'restock' || tab === 'postponed');
-  useAutoRefresh(fetchPOList, tab === 'po' ? 30 * 1000 : null, tab === 'po');
+  useAutoRefresh(tab === 'restock' ? fetchLive : fetchRecs, (tab === 'restock' || tab === 'postponed') ? 5 * 60 * 1000 : null, tab === 'restock' || tab === 'postponed');
+  useAutoRefresh(fetchPOList, tab === 'po' ? 5 * 60 * 1000 : null, tab === 'po');
+
+  useEffect(() => {
+    if (!liveLoading && scrollTo && tab === 'restock') {
+      const id = scrollTo === 'menipis' ? 'restock-high' : 'restock-critical';
+      setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    }
+  }, [liveLoading, scrollTo, tab]);
 
   async function handlePOCreated(poId: string) {
     try {
       const detail = await getPurchaseOrderDetail(poId);
       setReceiptPO(detail);
-      await fetchPOList();
+      await Promise.all([fetchPOList(), fetchLive()]);
     } catch {
       toast.error("Gagal memuat detail PO");
     }
@@ -172,7 +200,6 @@ export function RestockPage({ userProfile }: Props) {
   }
 
   function RecommendCard({ item, onStatusChange }: { item: RestockRecommendation; onStatusChange: () => void }) {
-    const priorityMap: Record<string, string> = { critical: 'high', high: 'high', medium: 'medium', low: 'low', overstock: 'overstock' };
     const isPostponed = item.status === 'postponed';
     return (
       <Card className={`overflow-hidden ${isPostponed ? 'border-amber-300 dark:border-amber-700' : ''}`}>
@@ -182,7 +209,7 @@ export function RestockPage({ userProfile }: Props) {
             <div><div className="font-semibold text-sm text-slate-800 dark:text-slate-200">{item.name}</div><div className="text-xs text-slate-400 mt-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{item.code} · {item.branch_name}</div></div>
             <div className="flex items-center gap-1.5">
               {isPostponed && <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200">Ditunda</span>}
-              <PriorityBadge priority={priorityMap[item.urgency] || 'medium'} />
+              <PriorityBadge priority={item.urgency} />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-2 text-xs mb-3">
@@ -229,13 +256,69 @@ export function RestockPage({ userProfile }: Props) {
 
       {/* Restock Recommendations Tab */}
       {tab === 'restock' && (
-        liveData.length === 0 ? (
+        liveLoading ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Truck size={16} className="text-slate-500" />
+                <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
+              </div>
+              <div className="flex items-center gap-2">
+<Tooltip text="Refresh"><button onClick={fetchLive} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+  <RefreshCw size={14} className={`text-slate-400 ${liveLoading ? 'animate-spin' : ''}`} />
+</button></Tooltip>
+                <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3, 4, 5, 6].map(j => <RecommendCardSkeleton key={j} />)}
+            </div>
+          </div>
+        ) : liveData.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
               <PackageCheck size={28} className="text-slate-400" />
             </div>
             <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Semua Stok Dalam Kondisi Aman</h3>
             <p className="text-sm text-slate-400 max-w-xs">Tidak ada item yang perlu direstock saat ini. Data akan diperbarui secara otomatis.</p>
+          </div>
+        ) : applyFilters(liveData).length === 0 ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Truck size={16} className="text-slate-500" />
+                <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter size={12} className="text-slate-400" />
+                  <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                    <option value="all">Semua Urgensi</option>
+                    <option value="critical">Kritis</option>
+                    <option value="high">Menipis</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <ArrowUpDown size={12} className="text-slate-400" />
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                    <option value="qty_desc">Rekomendasi ↑</option>
+                    <option value="name_asc">Nama A–Z</option>
+                    <option value="name_desc">Nama Z–A</option>
+                  </select>
+                </div>
+<Tooltip text="Refresh"><button onClick={fetchLive} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+  <RefreshCw size={14} className={`text-slate-400 ${liveLoading ? 'animate-spin' : ''}`} />
+</button></Tooltip>
+                <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+              </div>
+            </div>
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                <PackageSearch size={28} className="text-slate-400" />
+              </div>
+              <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Tidak Ada Hasil</h3>
+              <p className="text-sm text-slate-400 max-w-xs">Tidak ada item yang sesuai dengan filter saat ini.</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
@@ -245,23 +328,48 @@ export function RestockPage({ userProfile }: Props) {
                 <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
                 <span className="text-xs text-slate-400 font-mono">{liveData.length} item</span>
               </div>
-              <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
-            </div>
-            {[
-              { label: "Kritis", items: liveData.filter(i => i.urgency === 'critical'), dot: "bg-red-500", pulse: true, badge: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
-              { label: "Menipis", items: liveData.filter(i => i.urgency === 'high'), dot: "bg-amber-500", pulse: false, badge: "bg-amber-100 text-amber-700" },
-            ].map(sec => (
-              sec.items.length > 0 ? (
-                <div key={sec.label}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className={`w-2.5 h-2.5 rounded-full ${sec.dot} ${sec.pulse ? "animate-pulse" : ""}`} />
-                    <h2 className="font-semibold text-slate-800 dark:text-slate-200">{sec.label}</h2>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${sec.badge}`}>{sec.items.length} item</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{sec.items.map(item => <RecommendCard key={item.id} item={item} onStatusChange={fetchLive} />)}</div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter size={12} className="text-slate-400" />
+                  <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                    <option value="all">Semua Urgensi</option>
+                    <option value="critical">Kritis</option>
+                    <option value="high">Menipis</option>
+                  </select>
                 </div>
-              ) : null
-            ))}
+                <div className="flex items-center gap-1.5">
+                  <ArrowUpDown size={12} className="text-slate-400" />
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                    <option value="qty_desc">Rekomendasi ↑</option>
+                    <option value="name_asc">Nama A–Z</option>
+                    <option value="name_desc">Nama Z–A</option>
+                  </select>
+                </div>
+<Tooltip text="Refresh"><button onClick={fetchLive} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+  <RefreshCw size={14} className={`text-slate-400 ${liveLoading ? 'animate-spin' : ''}`} />
+</button></Tooltip>
+                <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+              </div>
+            </div>
+            {(() => {
+              const base = applyFilters(liveData);
+              const sections = [
+                { label: "Kritis", id: "restock-critical", items: base.filter(i => i.urgency === 'critical'), dot: "bg-red-500", pulse: true, badge: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400" },
+                { label: "Menipis", id: "restock-high", items: base.filter(i => i.urgency === 'high'), dot: "bg-amber-500", pulse: false, badge: "bg-amber-100 text-amber-700" },
+              ];
+              return sections.map(sec => (
+                sec.items.length > 0 ? (
+                  <div key={sec.label} id={sec.id}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className={`w-2.5 h-2.5 rounded-full ${sec.dot} ${sec.pulse ? "animate-pulse" : ""}`} />
+                      <h2 className="font-semibold text-slate-800 dark:text-slate-200">{sec.label}</h2>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${sec.badge}`}>{sec.items.length} item</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{sec.items.map(item => <RecommendCard key={item.id} item={item} onStatusChange={fetchLive} />)}</div>
+                  </div>
+                ) : null
+              ));
+            })()}
           </div>
         )
       )}
@@ -270,31 +378,100 @@ export function RestockPage({ userProfile }: Props) {
       {tab === 'postponed' && (
         loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map(j => <Skeleton key={j} className="h-56" />)}
+            {[1, 2, 3].map(j => <RecommendCardSkeleton key={j} />)}
           </div>
-        ) : items.filter(r => r.status === 'postponed').length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-              <Clock size={28} className="text-slate-400" />
-            </div>
-            <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Tidak Ada Restock Ditunda</h3>
-            <p className="text-sm text-slate-400 max-w-xs">Rekomendasi restock yang ditunda akan muncul di sini</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <Clock size={16} className="text-slate-500" />
-                <h2 className="font-semibold text-slate-800 dark:text-slate-200">Restock Ditunda</h2>
-                <span className="text-xs text-slate-400 font-mono">{items.filter(r => r.status === 'postponed').length} item</span>
+        ) : (() => {
+          const rawPostponed = items.filter(r => r.status === 'postponed');
+          const filteredPostponed = applyFilters(rawPostponed);
+          if (rawPostponed.length === 0) {
+            return (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                  <Clock size={28} className="text-slate-400" />
+                </div>
+                <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Tidak Ada Restock Ditunda</h3>
+                <p className="text-sm text-slate-400 max-w-xs">Rekomendasi restock yang ditunda akan muncul di sini</p>
               </div>
-              <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+            );
+          }
+          if (filteredPostponed.length === 0) {
+            return (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-slate-500" />
+                    <h2 className="font-semibold text-slate-800 dark:text-slate-200">Restock Ditunda</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Filter size={12} className="text-slate-400" />
+                      <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                        <option value="all">Semua Urgensi</option>
+                        <option value="critical">Kritis</option>
+                        <option value="high">Menipis</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <ArrowUpDown size={12} className="text-slate-400" />
+                      <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                        <option value="qty_desc">Rekomendasi ↑</option>
+                        <option value="name_asc">Nama A–Z</option>
+                        <option value="name_desc">Nama Z–A</option>
+                      </select>
+                    </div>
+<Tooltip text="Refresh"><button onClick={fetchRecs} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+  <RefreshCw size={14} className={`text-slate-400 ${loading ? 'animate-spin' : ''}`} />
+</button></Tooltip>
+                    <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+                  </div>
+                </div>
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                    <PackageSearch size={28} className="text-slate-400" />
+                  </div>
+                  <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Tidak Ada Hasil</h3>
+                  <p className="text-sm text-slate-400 max-w-xs">Tidak ada item yang sesuai dengan filter saat ini.</p>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-slate-500" />
+                  <h2 className="font-semibold text-slate-800 dark:text-slate-200">Restock Ditunda</h2>
+                  <span className="text-xs text-slate-400 font-mono">{filteredPostponed.length} item</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Filter size={12} className="text-slate-400" />
+                    <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                      <option value="all">Semua Urgensi</option>
+                      <option value="critical">Kritis</option>
+                      <option value="high">Menipis</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <ArrowUpDown size={12} className="text-slate-400" />
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
+                      <option value="qty_desc">Rekomendasi ↑</option>
+                      <option value="name_asc">Nama A–Z</option>
+                      <option value="name_desc">Nama Z–A</option>
+                    </select>
+                  </div>
+                  <button onClick={fetchRecs} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                    <RefreshCw size={14} className={`text-slate-400 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
+                  <BranchSelect value={recBranchFilter} onChange={v => { setRecBranchFilter(v); }} role={userProfile?.role} userBranch={userProfile?.branch} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredPostponed.map(item => <RecommendCard key={item.id} item={item} onStatusChange={fetchRecs} />)}
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {items.filter(r => r.status === 'postponed').map(item => <RecommendCard key={item.id} item={item} onStatusChange={fetchRecs} />)}
-            </div>
-          </div>
-        )
+          );
+        })()
       )}
 
       {/* Purchase Orders Tab */}
@@ -308,7 +485,9 @@ export function RestockPage({ userProfile }: Props) {
             </div>
             <div className="flex items-center gap-2">
               <BranchSelect value={poBranchFilter} onChange={setPOBranchFilter} role={userProfile?.role} userBranch={userProfile?.branch} />
-              <RefreshCw size={11} className="text-slate-400 animate-spin" />
+              <Tooltip text="Refresh"><button onClick={fetchPOList} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                <RefreshCw size={11} className={`text-slate-400 transition-all ${poLoading ? 'animate-spin' : ''}`} />
+              </button></Tooltip>
               <span className="text-xs text-slate-400">{poList.length} PO</span>
             </div>
           </div>

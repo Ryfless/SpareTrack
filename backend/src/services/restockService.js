@@ -1,5 +1,6 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
 const { sendNotificationToRole } = require('./notificationService');
+const { computeStatus } = require('../utils/stockStatus');
 
 const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, overstock: 4 };
 
@@ -86,7 +87,6 @@ async function generate(userId) {
           const { data: updated } = await supabase
             .from('restock_recommendations')
             .update({
-              current_stock: currentStock,
               reorder_point: reorderPoint,
               recommended_qty: recommendedQty,
               urgency,
@@ -104,7 +104,6 @@ async function generate(userId) {
             .insert({
               sparepart_id: sp.id,
               branch_id: br.id,
-              current_stock: currentStock,
               reorder_point: reorderPoint,
               recommended_qty: recommendedQty,
               urgency,
@@ -169,7 +168,7 @@ async function getLiveRecommendations({ branch_id }) {
 
   let stocksQry = supabase
     .from('branch_stocks')
-    .select('sparepart_id, branch_id, quantity, spareparts!inner(code, name, price, unit), branches!inner(name)')
+    .select('sparepart_id, branch_id, quantity, safety_stock, reorder_point, max_stock, spareparts!inner(code, name, price, unit), branches!inner(name)')
     .in('sparepart_id', spIds)
     .in('branch_id', brIds);
 
@@ -202,32 +201,37 @@ async function getLiveRecommendations({ branch_id }) {
     if (!stock) continue;
 
     const avgPredicted = Math.round(g.sum / g.count);
+    const currentStock = stock.quantity;
+    const safetyStock = stock.safety_stock || 0;
+    const reorderPoint = stock.reorder_point || 0;
+    const maxStock = stock.max_stock || 0;
 
-    if (stock.quantity > avgPredicted * 2) continue;
+    const stockStatus = computeStatus(currentStock, safetyStock, reorderPoint, maxStock);
+    if (stockStatus === 'overstock' || stockStatus === 'safe') continue;
 
-    const urgency = stock.quantity <= avgPredicted ? 'critical' : 'high';
-    const recommendedQty = stock.quantity <= avgPredicted
-      ? Math.max(Math.round(avgPredicted * 2 - stock.quantity), 0)
-      : Math.max(Math.round(avgPredicted - stock.quantity), 0);
+    const urgency = currentStock <= reorderPoint ? 'critical' : 'high';
+    const rawQty = Math.max(0, Math.round((avgPredicted + safetyStock) - currentStock));
+    const recommendedQty = Math.min(rawQty, Math.max(0, maxStock - currentStock));
 
     const notesParts = [];
-    if (urgency === 'critical') notesParts.push('Stok di bawah rata-rata prediksi permintaan — perlu restock segera');
-    else notesParts.push('Stok menipis — rata-rata prediksi permintaan perlu diantisipasi');
+    if (urgency === 'critical') notesParts.push('Stok kritis — di bawah reorder point, perlu restock segera');
+    else notesParts.push('Stok menipis — perlu diantisipasi');
 
     const { data: existing } = await supabase
       .from('restock_recommendations')
-      .select('id')
+      .select('id, status')
       .eq('sparepart_id', g.sparepart_id)
       .eq('branch_id', g.branch_id)
       .maybeSingle();
+
+    if (existing && existing.status !== 'pending') continue;
 
     let recId;
     if (existing) {
       await supabase
         .from('restock_recommendations')
         .update({
-          current_stock: stock.quantity,
-          reorder_point: avgPredicted,
+          reorder_point: reorderPoint,
           recommended_qty: recommendedQty,
           urgency,
           status: 'pending',
@@ -242,8 +246,7 @@ async function getLiveRecommendations({ branch_id }) {
         .insert({
           sparepart_id: g.sparepart_id,
           branch_id: g.branch_id,
-          current_stock: stock.quantity,
-          reorder_point: avgPredicted,
+          reorder_point: reorderPoint,
           recommended_qty: recommendedQty,
           urgency,
           notes: notesParts.join('. '),
@@ -265,16 +268,16 @@ async function getLiveRecommendations({ branch_id }) {
       lead_time: stock.spareparts?.lead_time || 0,
       branch_id: g.branch_id,
       branch_name: stock.branches?.name || '',
-      current_stock: stock.quantity,
-      reorder_point: avgPredicted,
+      current_stock: currentStock,
+      reorder_point: reorderPoint,
       recommended_qty: recommendedQty,
       urgency,
       status: 'pending',
       notes: notesParts.join('. '),
       postpone_reason: '',
       postpone_until: null,
-      days_to_stockout: stock.quantity > 0
-        ? Math.round(stock.quantity / Math.max(recommendedQty / 30, 1))
+      days_to_stockout: currentStock > 0
+        ? Math.round(currentStock / Math.max(recommendedQty / 30, 1))
         : 0,
       created_at: new Date().toISOString(),
     });
@@ -291,7 +294,7 @@ async function summary() {
     .select('urgency, status');
 
   const byUrgency = { critical: 0, high: 0, medium: 0, low: 0, overstock: 0 };
-  const byStatus = { pending: 0, approved: 0, rejected: 0, ordered: 0 };
+  const byStatus = { pending: 0, ordered: 0 };
 
   for (const r of all || []) {
     if (byUrgency[r.urgency] !== undefined) byUrgency[r.urgency]++;
@@ -300,10 +303,23 @@ async function summary() {
 
   const { data: criticalItems } = await supabase
     .from('restock_recommendations')
-    .select('*, spareparts(name, code), branches(name)')
+    .select('*, spareparts!inner(id, name, code), branches!inner(name)')
     .eq('urgency', 'critical')
     .eq('status', 'pending')
     .limit(5);
+
+  const criticalPairs = [...new Set((criticalItems || []).map(c => `${c.sparepart_id}|${c.branch_id}`))];
+  const criticalSpIds = [...new Set((criticalItems || []).map(c => c.sparepart_id))];
+  const criticalBrIds = [...new Set((criticalItems || []).map(c => c.branch_id))];
+
+  let bsCritQry = supabase
+    .from('branch_stocks')
+    .select('sparepart_id, branch_id, quantity')
+    .in('sparepart_id', criticalSpIds)
+    .in('branch_id', criticalBrIds);
+  const { data: bsCrit } = await bsCritQry;
+  const critStockMap = {};
+  for (const s of bsCrit || []) critStockMap[`${s.sparepart_id}|${s.branch_id}`] = s.quantity;
 
   const { data: poStats } = await supabase
     .from('purchase_orders')
@@ -323,7 +339,7 @@ async function summary() {
       sparepart_name: c.spareparts?.name || '',
       code: c.spareparts?.code || '',
       branch_name: c.branches?.name || '',
-      current_stock: c.current_stock,
+      current_stock: critStockMap[`${c.sparepart_id}|${c.branch_id}`] ?? 0,
       recommended_qty: c.recommended_qty,
     })),
     purchase_orders: { by_status: poByStatus },
@@ -352,30 +368,52 @@ async function recommendations(query) {
   const { data, error } = await qry.limit(Number(limit));
   if (error) throw error;
 
-  const sorted = (data || [])
-    .map(r => ({
-      id: r.id,
-      sparepart_id: r.sparepart_id,
-      code: r.spareparts?.code || '',
-      name: r.spareparts?.name || '',
-      price: r.spareparts?.price || 0,
-      unit: r.spareparts?.unit || 'pcs',
-      lead_time: r.spareparts?.lead_time || 0,
-      branch_id: r.branch_id,
-      branch_name: r.branches?.name || '',
-      current_stock: r.current_stock,
-      reorder_point: r.reorder_point,
-      recommended_qty: r.recommended_qty,
-      urgency: r.urgency,
-      status: r.status,
-      notes: r.notes,
-      postpone_reason: r.postpone_reason || '',
-      postpone_until: r.postpone_until || null,
-      days_to_stockout: r.current_stock > 0
-        ? Math.round(r.current_stock / Math.max(r.recommended_qty / 30, 1))
-        : 0,
-      created_at: r.created_at,
-    }))
+  const rows = data || [];
+  if (rows.length === 0) return [];
+
+  const pairs = [...new Set(rows.map(r => `${r.sparepart_id}|${r.branch_id}`))];
+  const spIds = [...new Set(rows.map(r => r.sparepart_id))];
+  const brIds = [...new Set(rows.map(r => r.branch_id))];
+
+  let bsQry = supabase
+    .from('branch_stocks')
+    .select('sparepart_id, branch_id, quantity')
+    .in('sparepart_id', spIds)
+    .in('branch_id', brIds);
+
+  if (branch_id) bsQry = bsQry.eq('branch_id', branch_id);
+
+  const { data: bsData } = await bsQry;
+  const stockMap = {};
+  for (const s of bsData || []) stockMap[`${s.sparepart_id}|${s.branch_id}`] = s.quantity;
+
+  const sorted = rows
+    .map(r => {
+      const currentStock = stockMap[`${r.sparepart_id}|${r.branch_id}`] ?? 0;
+      return {
+        id: r.id,
+        sparepart_id: r.sparepart_id,
+        code: r.spareparts?.code || '',
+        name: r.spareparts?.name || '',
+        price: r.spareparts?.price || 0,
+        unit: r.spareparts?.unit || 'pcs',
+        lead_time: r.spareparts?.lead_time || 0,
+        branch_id: r.branch_id,
+        branch_name: r.branches?.name || '',
+        current_stock: currentStock,
+        reorder_point: r.reorder_point,
+        recommended_qty: r.recommended_qty,
+        urgency: r.urgency,
+        status: r.status,
+        notes: r.notes,
+        postpone_reason: r.postpone_reason || '',
+        postpone_until: r.postpone_until || null,
+        days_to_stockout: currentStock > 0
+          ? Math.round(currentStock / Math.max(r.recommended_qty / 30, 1))
+          : 0,
+        created_at: r.created_at,
+      };
+    })
     .sort((a, b) => (URGENCY_ORDER[a.urgency] || 99) - (URGENCY_ORDER[b.urgency] || 99));
 
   return sorted;
@@ -390,6 +428,15 @@ async function detailRecommendation(id) {
 
   if (error || !r) return null;
 
+  const { data: bs } = await supabase
+    .from('branch_stocks')
+    .select('quantity')
+    .eq('sparepart_id', r.sparepart_id)
+    .eq('branch_id', r.branch_id)
+    .maybeSingle();
+
+  const currentStock = bs?.quantity ?? 0;
+
   return {
     id: r.id,
     sparepart_id: r.sparepart_id,
@@ -402,7 +449,7 @@ async function detailRecommendation(id) {
     supplier: r.spareparts?.suppliers?.name || '',
     branch_id: r.branch_id,
     branch_name: r.branches?.name || '',
-    current_stock: r.current_stock,
+    current_stock: currentStock,
     reorder_point: r.reorder_point,
     recommended_qty: r.recommended_qty,
     urgency: r.urgency,
@@ -413,84 +460,6 @@ async function detailRecommendation(id) {
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
-}
-
-async function approveRecommendation(id, userId, ip_address = '') {
-  const { data: rec, error: findError } = await supabase
-    .from('restock_recommendations')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (findError || !rec) return null;
-
-  const { data, error } = await supabase
-    .from('restock_recommendations')
-    .update({ status: 'approved', updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  await supabase.from('activities').insert({
-    user_id: userId,
-    action: 'approve_restock',
-    entity_type: 'restock_recommendation',
-    entity_id: id,
-    description: `Menyetujui rekomendasi restock ${rec.id}`,
-  });
-
-  await supabase.from('audit_logs').insert({
-    user_id: userId,
-    action: 'approve_restock',
-    entity_type: 'restock_recommendation',
-    entity_id: id,
-    old_data: { status: rec.status },
-    new_data: { status: 'approved' },
-    ip_address,
-  });
-
-  return data;
-}
-
-async function rejectRecommendation(id, userId, ip_address = '') {
-  const { data: rec, error: findError } = await supabase
-    .from('restock_recommendations')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (findError || !rec) return null;
-
-  const { data, error } = await supabase
-    .from('restock_recommendations')
-    .update({ status: 'rejected', updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  await supabase.from('activities').insert({
-    user_id: userId,
-    action: 'reject_restock',
-    entity_type: 'restock_recommendation',
-    entity_id: id,
-    description: `Menolak rekomendasi restock ${rec.id}`,
-  });
-
-  await supabase.from('audit_logs').insert({
-    user_id: userId,
-    action: 'reject_restock',
-    entity_type: 'restock_recommendation',
-    entity_id: id,
-    old_data: { status: rec.status },
-    new_data: { status: 'rejected' },
-    ip_address,
-  });
-
-  return data;
 }
 
 async function postponeRecommendation(id, userId, ip_address = '', postpone_reason = '', postpone_until = null) {
@@ -791,6 +760,13 @@ async function receivePurchaseOrder(poId, userId, ip_address = '') {
       .from('purchase_order_items')
       .update({ received_qty: qty })
       .eq('id', item.id);
+
+    await supabase
+      .from('restock_recommendations')
+      .delete()
+      .eq('sparepart_id', item.sparepart_id)
+      .eq('branch_id', po.branch_id)
+      .eq('status', 'ordered');
   }
 
   if (!po.total_amount || po.total_amount === 0) {
@@ -835,7 +811,7 @@ async function receivePurchaseOrder(poId, userId, ip_address = '') {
 async function cancelPurchaseOrder(poId, userId, ip_address = '') {
   const { data: po, error } = await supabase
     .from('purchase_orders')
-    .select('*')
+    .select('*, purchase_order_items(sparepart_id)')
     .eq('id', poId)
     .single();
 
@@ -851,11 +827,14 @@ async function cancelPurchaseOrder(poId, userId, ip_address = '') {
     .update({ status: 'cancelled', updated_at: new Date().toISOString() })
     .eq('id', poId);
 
-  if (po.recommendation_id) {
+  const poItems = po.purchase_order_items || [];
+  for (const item of poItems) {
     await supabase
       .from('restock_recommendations')
       .update({ status: 'pending', updated_at: new Date().toISOString() })
-      .eq('id', po.recommendation_id);
+      .eq('sparepart_id', item.sparepart_id)
+      .eq('branch_id', po.branch_id)
+      .eq('status', 'ordered');
   }
 
   await supabase.from('activities').insert({
@@ -882,7 +861,7 @@ async function cancelPurchaseOrder(poId, userId, ip_address = '') {
 
 module.exports = {
   getLiveRecommendations, generate, summary, recommendations, detailRecommendation,
-  approveRecommendation, rejectRecommendation, postponeRecommendation,
+  postponeRecommendation,
   purchaseOrders, createPurchaseOrder,
   purchaseOrderDetail, approvePurchaseOrder, receivePurchaseOrder,
   cancelPurchaseOrder,

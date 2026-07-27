@@ -19,3 +19,12 @@ exports.getStocks = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.salesTrend = async (req, res, next) => {
+  try {
+    const data = await branchesService.getSalesTrend();
+    return success(res, data, 'OK');
+  } catch (err) {
+    next(err);
+  }
+};

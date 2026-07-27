@@ -1,6 +1,7 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
+const { computeStatus } = require('../utils/stockStatus');
 
 async function summary(query) {
   const { branch_id, start_date, end_date } = query;
@@ -24,18 +25,84 @@ async function summary(query) {
   const totalAdjustment = movements?.filter(m => m.type === 'adjustment').reduce((s, m) => s + m.quantity, 0) || 0;
   const totalTransfer = movements?.filter(m => m.type === 'transfer').length || 0;
 
-  const { data: sparepartCount } = await supabase
+  // Monthly trend for charts
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const outMovements = (movements || []).filter(m => m.type === 'out');
+  const spIds = [...new Set((movements || []).map(m => m.sparepart_id).filter(Boolean))];
+  const { data: sparepartPrices } = await supabase
     .from('spareparts')
-    .select('id', { count: 'exact', head: true });
+    .select('id, price')
+    .in('id', spIds);
+  const priceMap = Object.fromEntries((sparepartPrices || []).map(sp => [sp.id, sp.price || 0]));
 
+  const trendMap = {};
+  for (const m of outMovements) {
+    const d = new Date(m.created_at);
+    const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!trendMap[mk]) trendMap[mk] = { units: 0, revenue: 0 };
+    trendMap[mk].units += m.quantity;
+    trendMap[mk].revenue += m.quantity * (priceMap[m.sparepart_id] || 0);
+  }
+
+  const monthlyTrend = Object.entries(trendMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, val]) => ({
+      month: (() => { const [, m] = key.split('-'); return monthNames[parseInt(m) - 1]; })(),
+      units: val.units,
+      revenue: +(val.revenue / 1000000).toFixed(1),
+    }));
+
+  // Total items — respect branch filter
+  let totalItems;
+  if (branch_id) {
+    const { count } = await supabase
+      .from('branch_stocks')
+      .select('sparepart_id', { count: 'exact', head: true })
+      .eq('branch_id', branch_id);
+    totalItems = count || 0;
+  } else {
+    const { count } = await supabase
+      .from('spareparts')
+      .select('id', { count: 'exact', head: true });
+    totalItems = count || 0;
+  }
+
+  // Critical items — using safety_stock comparison
   let critQuery = supabase
     .from('branch_stocks')
-    .select('*, spareparts(name, code), branches(name)', { count: 'exact' })
-    .lte('quantity', 10);
+    .select('*, spareparts(name, code, safety_stock), branches(name)');
 
   if (branch_id) critQuery = critQuery.eq('branch_id', branch_id);
 
-  const { data: criticalItems } = await critQuery;
+  const { data: allBranchStocks } = await critQuery;
+
+  const criticalItems = (allBranchStocks || []).filter(
+    bs => computeStatus(bs.quantity, bs.spareparts?.safety_stock, bs.reorder_point, bs.max_stock) === 'critical'
+  );
+
+  // Top 1 sparepart by sales volume
+  const topGrouped = {};
+  for (const m of outMovements) {
+    topGrouped[m.sparepart_id] = (topGrouped[m.sparepart_id] || 0) + m.quantity;
+  }
+  const topEntry = Object.entries(topGrouped).sort(([, a], [, b]) => b - a)[0];
+
+  let topSparepart = { name: '', total_sold: 0, avg_monthly: 0 };
+  if (topEntry) {
+    const { data: sp } = await supabase
+      .from('spareparts')
+      .select('name')
+      .eq('id', topEntry[0])
+      .single();
+    const start = new Date(start_date || defaultStart);
+    const end = new Date(end_date || defaultEnd);
+    const monthCount = Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth() + 1);
+    topSparepart = {
+      name: sp?.name || '',
+      total_sold: topEntry[1],
+      avg_monthly: Math.round(topEntry[1] / monthCount),
+    };
+  }
 
   return {
     period: {
@@ -50,15 +117,17 @@ async function summary(query) {
       net_flow: totalIn - totalOut,
     },
     inventory: {
-      total_items: sparepartCount?.count || 0,
-      critical_items: criticalItems?.length || 0,
-      critical_list: (criticalItems || []).map(c => ({
+      total_items: totalItems,
+      critical_items: criticalItems.length,
+      critical_list: criticalItems.map(c => ({
         name: c.spareparts?.name || '',
         code: c.spareparts?.code || '',
         branch: c.branches?.name || '',
         quantity: c.quantity,
       })),
     },
+    monthly_trend: monthlyTrend,
+    top_sparepart: topSparepart,
   };
 }
 
@@ -91,10 +160,11 @@ async function fetchCriticalItems() {
   const { data } = await supabase
     .from('branch_stocks')
     .select('*, spareparts(name, code, safety_stock, reorder_point), branches(name)')
-    .lte('quantity', 10)
     .order('quantity', { ascending: true });
 
-  return data || [];
+  return (data || []).filter(
+    bs => computeStatus(bs.quantity, bs.spareparts?.safety_stock, bs.reorder_point, bs.max_stock) === 'critical'
+  );
 }
 
 async function exportPdf(type, startDate, endDate, branchId) {

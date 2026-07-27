@@ -24,9 +24,19 @@ export interface BranchStockItem {
   status: string;
 }
 
+export interface TopSellingItem {
+  sparepart_id: string;
+  sparepart_name: string;
+  sparepart_code: string;
+  total: number;
+}
+
 export interface BranchStocksResponse {
   branch: Branch;
   stocks: BranchStockItem[];
+  total_value: number;
+  monthly_sales: number;
+  top_selling: TopSellingItem[];
 }
 
 export async function list(): Promise<Branch[]> {
@@ -36,5 +46,23 @@ export async function list(): Promise<Branch[]> {
 
 export async function getStocks(branchId: string, query?: { search?: string; category_id?: string; status?: string }): Promise<BranchStocksResponse> {
   const response = await api.get<BranchStocksResponse>(`/branches/${branchId}/stocks`, query as Record<string, string | number | undefined>);
+  return response.data;
+}
+
+export interface SalesTrendBranch {
+  rank: number;
+  branch_id: string;
+  branch_name: string;
+  total: number;
+}
+
+export interface SalesTrendItem {
+  month_key: string;
+  month_label: string;
+  top_branches: SalesTrendBranch[];
+}
+
+export async function getSalesTrend(): Promise<SalesTrendItem[]> {
+  const response = await api.get<SalesTrendItem[]>('/branches/sales-trend');
   return response.data;
 }

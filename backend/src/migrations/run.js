@@ -15,6 +15,8 @@ const MIGRATION_FILES = [
   '010_add_postpone_reason.sql',
   '011_add_postpone_until.sql',
   '012_branch_stocks_int.sql',
+  '013_drop_current_stock.sql',
+  '014_cleanup_restock_status.sql',
 ];
 
 function getConnectionConfigs() {

@@ -10,34 +10,26 @@ import { KPICard } from "../../components/KPICard";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { getSummary, getRecentActivity } from "../../services/dashboard";
 import { list as fetchBranches } from "../../services/branches";
-import { getRecommendations } from "../../services/restock";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { PageId } from "../../types";
 
 export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId, f?: string) => void; onAction: (a: string) => void }) {
   const [loading, setLoading] = useState(true);
-  const [kpi, setKpi] = useState({ total_spareparts: 0, total_branches: 0, total_stock: 0, total_value: 0, critical_stock: 0, low_stock: 0, overstock: 0, safe: 0 });
+  const [kpi, setKpi] = useState({ total_spareparts: 0, total_branches: 0, total_stock: 0, total_value: 0, critical_stock: 0, low_stock: 0, overstock: 0, safe: 0, total_recommendations: 0 });
   const [activities, setActivities] = useState<Array<{ id: string; description: string; action: string; created_at: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string; city: string }>>([]);
-
-  const [urgentRestock, setUrgentRestock] = useState(0);
-  const [restockItems, setRestockItems] = useState<Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [summary, activities, branches, recs] = await Promise.all([
+      const [summary, activities, branches] = await Promise.all([
         getSummary().catch(() => null),
         getRecentActivity().catch(() => []),
         fetchBranches().catch(() => []),
-        getRecommendations({ limit: 10 }).catch(() => []),
       ]);
       if (summary?.kpi) setKpi(summary.kpi);
       setActivities(activities as Array<{ id: string; description: string; action: string; created_at: string }>);
       setBranches(branches as Array<{ id: string; name: string; city: string }>);
-      const urgent = (recs as Array<{ urgency: string }>).filter(i => i.urgency === 'high' || i.urgency === 'critical');
-      setUrgentRestock(urgent.length);
-      setRestockItems(urgent as Array<{ id: string; name: string; branch_name: string; days_to_stockout: number; recommended_qty: number; urgency: string }>);
     } catch {
       // ignore
     } finally {
@@ -59,7 +51,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
 
   const actionAlerts = [
     { icon: AlertCircle, label: "Stok Kritis", count: kpi.critical_stock, cls: "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600", desc: "perlu restock segera", page: "restock" as PageId },
-    { icon: AlertTriangle, label: "Stok Menipis", count: kpi.low_stock, cls: "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-600", desc: "di bawah reorder point", page: "inventory" as PageId },
+    { icon: AlertTriangle, label: "Stok Menipis", count: kpi.low_stock, cls: "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-600", desc: "di bawah reorder point", page: "restock" as PageId, filter: "menipis" },
     { icon: Truck, label: "Total Stok", count: kpi.total_stock, cls: "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-600", desc: "di seluruh cabang", page: "inventory" as PageId },
     { icon: Building2, label: "Cabang Aktif", count: branches.length, cls: "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600", desc: "cabang terdaftar", page: "branches" as PageId },
   ];
@@ -101,7 +93,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {actionAlerts.map(a => (
-            <button key={a.label} onClick={() => onNavigate(a.page)} className={`flex items-start gap-3 p-3 rounded-xl border ${a.cls} transition-all hover:shadow-sm active:scale-95 text-left`}>
+            <button key={a.label} onClick={() => onNavigate(a.page, (a as any).filter)} className={`flex items-start gap-3 p-3 rounded-xl border ${a.cls} transition-all hover:shadow-sm active:scale-95 text-left`}>
               <a.icon size={16} className="mt-0.5 shrink-0" />
               <div><div className="text-xl font-bold leading-none mb-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{a.count}</div><div className="text-xs font-semibold">{a.label}</div><div className="text-xs opacity-60 mt-0.5">{a.desc}</div></div>
             </button>
@@ -124,7 +116,7 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
         <KPICard label="Total Sparepart" value={kpi.total_spareparts} icon={Package} sub={`${kpi.total_stock} total stok`} trend={{ value: `${Math.round((kpi.total_spareparts || 0) > 0 ? ((kpi.total_stock) / kpi.total_spareparts) * 10 : 0)}%`, up: true }} sparkData={[10, 10, 11, 10, 11, 12, kpi.total_spareparts]} onClick={() => onNavigate("inventory")} />
         <KPICard label="Nilai Stok" value={`Rp ${((kpi.total_stock * 100000) / 1_000_000).toFixed(1)}M`} icon={BarChart3} sub={`di ${branches.length} cabang`} trend={{ value: "+8.4%", up: true }} sparkData={[70, 75, 72, 78, 80, 82, 83]} onClick={() => onNavigate("reports")} />
         <KPICard label="Item Bermasalah" value={kpi.low_stock + kpi.critical_stock} icon={AlertTriangle} sub={`${kpi.critical_stock} kritis · ${kpi.low_stock} menipis`} warning trend={{ value: "+2", up: false }} sparkData={[3, 4, 5, 4, 5, 6, kpi.low_stock + kpi.critical_stock]} onClick={() => onNavigate("inventory", "critical")} />
-        <KPICard label="Restock Urgent" value={urgentRestock} icon={ShoppingCart} sub="prioritas tinggi" danger trend={{ value: "+1", up: false }} sparkData={[1, 2, 2, 3, 3, 3, urgentRestock]} onClick={() => onNavigate("restock")} />
+        <KPICard label="Restock Urgent" value={kpi.total_recommendations} icon={ShoppingCart} sub="prioritas tinggi" danger trend={{ value: "+1", up: false }} sparkData={[1, 2, 2, 3, 3, 3, kpi.total_recommendations]} onClick={() => onNavigate("restock")} />
       </div>
       {/* Branch Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -186,16 +178,13 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
         <Card className="lg:col-span-3 p-5">
           <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4">Restock Urgent</div>
           <div className="space-y-2.5">
-            {restockItems.length === 0 ? (
-              <div className="text-xs text-slate-400 text-center py-4">Tidak ada item urgent</div>
-            ) : restockItems.slice(0, 4).map(item => (
-              <div key={item.id} className="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800 hover:bg-red-100/60 transition-colors cursor-pointer" onClick={() => onNavigate("restock")}>
-                <AlertTriangle size={13} className="text-red-500 mt-0.5 shrink-0" />
-                <div className="min-w-0 flex-1"><div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name}</div><div className="text-xs text-slate-400">{item.branch_name} · stockout {item.days_to_stockout}h lagi</div></div>
-                <div className="text-sm font-bold text-blue-700 shrink-0">+{item.recommended_qty}</div>
-              </div>
-            ))}
+            <div className="text-xs text-slate-400 text-center py-4">
+              {kpi.total_recommendations > 0
+                ? `${kpi.total_recommendations} rekomendasi restock perlu ditindaklanjuti`
+                : 'Tidak ada item urgent'}
+            </div>
           </div>
+          <button onClick={() => onNavigate("restock")} className="w-full mt-2 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all">Lihat Semua Restock</button>
         </Card>
       </div>
     </div>

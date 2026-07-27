@@ -50,6 +50,7 @@ export default function App() {
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("all");
   const [inventoryBranch, setInventoryBranch] = useState("all");
+  const [restockFilter, setRestockFilter] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -168,8 +169,8 @@ export default function App() {
 
   function navigate(p: PageId, filter?: string) {
     setPage(p); setSelectedPart(null); setSidebarOpen(false);
-    if (filter) setInventoryFilter(filter);
-    else if (p !== "inventory") setInventoryFilter("all");
+    if (p === "restock") { setRestockFilter(filter || ""); }
+    else { setRestockFilter(""); if (filter) setInventoryFilter(filter); else if (p !== "inventory") setInventoryFilter("all"); }
   }
   function quickAction(action: string) {
     if (action === "add_item")    setAddItemOpen(true);
@@ -413,7 +414,7 @@ export default function App() {
         <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
           {page === "dashboard"    && !selectedPart && <DashboardPage onNavigate={navigate} onAction={quickAction} />}
           {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} filterBranch={inventoryBranch} onBranchChange={setInventoryBranch} />}
-          {page === "restock"      && !selectedPart && <RestockPage userProfile={userProfile} />}
+          {page === "restock"      && !selectedPart && <RestockPage userProfile={userProfile} scrollTo={restockFilter} />}
           {page === "branches"     && !selectedPart && <BranchesPage />}
           {page === "transactions" && !selectedPart && <TransactionsPage userProfile={userProfile} />}
           {page === "reports"      && !selectedPart && <ReportsPage userProfile={userProfile} />}

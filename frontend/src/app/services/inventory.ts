@@ -16,6 +16,8 @@ export interface SparepartListItem {
     branch_id: string;
     branch_name: string;
     quantity: number;
+    reorder_point?: number;
+    max_stock?: number;
   }>;
   status: string;
   created_at: string;

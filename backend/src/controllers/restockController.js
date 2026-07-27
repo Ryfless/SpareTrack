@@ -48,26 +48,6 @@ exports.detailRecommendation = async (req, res, next) => {
   }
 };
 
-exports.approveRecommendation = async (req, res, next) => {
-  try {
-    const data = await restockService.approveRecommendation(req.params.id, req.user.id, getClientIp(req));
-    if (!data) return error(res, 'Rekomendasi tidak ditemukan', null, 404);
-    return success(res, data, 'Rekomendasi berhasil diapprove');
-  } catch (err) {
-    next(err);
-  }
-};
-
-exports.rejectRecommendation = async (req, res, next) => {
-  try {
-    const data = await restockService.rejectRecommendation(req.params.id, req.user.id, getClientIp(req));
-    if (!data) return error(res, 'Rekomendasi tidak ditemukan', null, 404);
-    return success(res, data, 'Rekomendasi berhasil ditolak');
-  } catch (err) {
-    next(err);
-  }
-};
-
 exports.postponeRecommendation = async (req, res, next) => {
   try {
     const data = await restockService.postponeRecommendation(req.params.id, req.user.id, getClientIp(req), req.body.postpone_reason, req.body.postpone_until);

@@ -117,6 +117,8 @@ async function list(query) {
     });
   }
 
+  merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
   return {
     data: merged,
     meta: {

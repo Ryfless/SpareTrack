@@ -10,6 +10,7 @@ export interface DashboardSummary {
     low_stock: number;
     overstock: number;
     safe: number;
+    total_recommendations: number;
   };
   recent_activity: Array<{
     id: string;

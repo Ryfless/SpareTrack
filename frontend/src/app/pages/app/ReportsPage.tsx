@@ -38,11 +38,7 @@ export function ReportsPage({ userProfile }: Props) {
       .finally(() => setLoading(false));
   }, [startDate, endDate, branchFilter]);
 
-  const chartData = [
-    { month:"Jan", rev:42.5, units:280 }, { month:"Feb", rev:48.2, units:305 },
-    { month:"Mar", rev:51.6, units:335 }, { month:"Apr", rev:46.8, units:318 },
-    { month:"Mei", rev:55.3, units:362 }, { month:"Jun", rev:58.1, units:378 },
-  ];
+  const chartData = data?.monthly_trend || [];
 
   async function handleExport(type: 'pdf' | 'excel') {
     setExporting(type);
@@ -87,9 +83,9 @@ export function ReportsPage({ userProfile }: Props) {
         </div>
       </Card>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KPICard label="Total Masuk" value={mov?.total_in?.toLocaleString() ?? "0"} sub={mov ? `${mov.total_in - mov.total_out >= 0 ? "+" : ""}${(mov.total_in - mov.total_out).toLocaleString()} net` : "-"} icon={BarChart3} trend={mov ? { value: `+${((mov.total_in / (mov.total_out || 1)) * 100).toFixed(0)}%`, up: mov.total_in > mov.total_out } : undefined} />
+        <KPICard label="Total Masuk" value={mov?.total_in?.toLocaleString() ?? "0"} sub={mov ? `${mov.total_in - mov.total_out >= 0 ? "+" : ""}${(mov.total_in - mov.total_out).toLocaleString()} net` : "-"} icon={BarChart3} trend={mov ? { value: `${mov.total_in > mov.total_out ? '+' : ''}${((mov.total_in / (mov.total_out || 1)) * 100).toFixed(0)}%`, up: mov.total_in > mov.total_out } : undefined} />
         <KPICard label="Total Keluar" value={mov?.total_out?.toLocaleString() ?? "0"} sub="seluruh transaksi" icon={Package} />
-        <KPICard label="Item Kritis" value={inv?.critical_items?.toString() ?? "0"} sub={`dari ${inv?.total_items ?? 0} item`} icon={AlertTriangle} accent />
+        <KPICard label="Terlaris" value={data?.top_sparepart?.name || "-"} sub={data?.top_sparepart?.name ? `${data.top_sparepart.avg_monthly} unit/bulan` : "tidak ada data"} icon={Star} />
         <KPICard label="Transfer" value={mov?.total_transfer?.toString() ?? "0"} sub="antar cabang" icon={Target} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

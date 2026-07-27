@@ -210,19 +210,19 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
               <th className="px-4 py-3 w-8"><input type="checkbox" checked={selected.size === items.length && items.length > 0} onChange={toggleAll} className="rounded" /></th>
               {(() => {
                 const branchNames = filterBranch === "all" && items.length > 0
-                  ? items[0].stock_by_branch.map(b => b.branch_name)
+                  ? items[0].stock_by_branch.map(b => b.branch_name).sort((a, b) => a.localeCompare(b))
                   : [];
                 const cols = filterBranch === "all"
                   ? ["Kode", "Nama Sparepart", "Kategori", ...branchNames, "Total", "Status", ""]
-                  : ["Kode", "Nama Sparepart", "Kategori", "Stok", "Status", ""];
+                  : ["Kode", "Nama Sparepart", "Kategori", "Stok", "ROP", "Max", "Status", ""];
                 return cols.map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{h}</th>);
               })()}
             </tr></thead>
             <tbody>
               {items.length === 0
-                ? <tr><td colSpan={filterBranch === "all" ? 6 + (items[0]?.stock_by_branch.length || branches.length) : 6}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
+                ? <tr><td colSpan={filterBranch === "all" ? 6 + (items[0]?.stock_by_branch.length || branches.length) : 8}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
                 : items.map(part => {
-                    const branchNames = items[0]?.stock_by_branch.map(b => b.branch_name) || [];
+                    const branchNames = (items[0]?.stock_by_branch.map(b => b.branch_name) || []).sort((a, b) => a.localeCompare(b));
                     const stockByBranchName = Object.fromEntries(part.stock_by_branch.map(b => [b.branch_name, b.quantity]));
                     return (
                       <tr key={part.id} className={`border-b border-slate-50 dark:border-slate-800/50 hover:bg-blue-50/40 dark:hover:bg-blue-900/10 transition-colors ${selected.has(part.id) ? "bg-blue-50/60 dark:bg-blue-900/20" : ""}`}>
@@ -242,6 +242,8 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
                         ) : (
                           <>
                             <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.stock_by_branch[0]?.quantity ?? 0}</td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.stock_by_branch[0]?.reorder_point ?? 0}</td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-700 dark:text-slate-300" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.stock_by_branch[0]?.max_stock ?? 0}</td>
                             <td className="px-4 py-3"><StatusBadge status={part.status} /></td>
                             <td className="px-4 py-3 flex gap-1"><Tooltip text="Lihat detail"><button onClick={() => onSelectPart(part.id)} className="p-1 rounded text-slate-300 hover:text-slate-600 dark:hover:text-slate-400 transition"><Eye size={14} /></button></Tooltip><Tooltip text="Edit sparepart"><button onClick={(e) => { e.stopPropagation(); setEditItemId(part.id); }} className="p-1 rounded text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition"><Pencil size={14} /></button></Tooltip></td>
                           </>

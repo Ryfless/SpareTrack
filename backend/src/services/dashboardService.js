@@ -1,4 +1,5 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
+const { computeStatusCounts } = require('./inventoryService');
 
 async function getSummary(userId) {
   const { data: { user } } = await supabase.auth.admin.getUserById(userId);
@@ -23,32 +24,24 @@ async function getSummary(userId) {
       : supabase.from('branch_stocks').select('quantity, safety_stock, reorder_point, max_stock, min_stock, sparepart_id'),
   ]);
 
-  const spareparts = spResult.data || [];
   const branchStocks = bsResult.data || [];
 
-  const bsBySp = {};
+  const priceMap = {};
+  for (const sp of spResult.data || []) {
+    priceMap[sp.id] = Number(sp.price) || 0;
+  }
+
+  let totalStock = 0, totalValue = 0;
   for (const bs of branchStocks) {
-    if (!bsBySp[bs.sparepart_id]) bsBySp[bs.sparepart_id] = { total: 0, safety: 0, rop: 0, max: null, min: 0 };
-    bsBySp[bs.sparepart_id].total += bs.quantity || 0;
-    bsBySp[bs.sparepart_id].safety = Math.max(bsBySp[bs.sparepart_id].safety, bs.safety_stock || 0);
-    bsBySp[bs.sparepart_id].rop = Math.max(bsBySp[bs.sparepart_id].rop, bs.reorder_point || 0);
-    if (bs.max_stock) bsBySp[bs.sparepart_id].max = Math.max(bsBySp[bs.sparepart_id].max || 0, bs.max_stock);
-    bsBySp[bs.sparepart_id].min = Math.max(bsBySp[bs.sparepart_id].min, bs.min_stock || 0);
+    totalStock += bs.quantity || 0;
+    totalValue += (bs.quantity || 0) * (priceMap[bs.sparepart_id] || 0);
   }
 
-  let totalStock = 0, totalValue = 0, critical = 0, low = 0, overstock = 0, safe = 0;
+  const counts = await computeStatusCounts();
 
-  for (const sp of spareparts) {
-    const bd = bsBySp[sp.id] || { total: 0, safety: 0, rop: 0, max: null, min: 0 };
-    totalStock += bd.total;
-    totalValue += bd.total * (Number(sp.price) || 0);
-
-    const overstockThreshold = bd.max ?? bd.min * 5;
-    if (bd.total <= bd.safety) critical++;
-    else if (bd.total <= bd.rop) low++;
-    else if (bd.total >= overstockThreshold) overstock++;
-    else safe++;
-  }
+  const { count: totalRecs } = await supabase
+    .from('restock_recommendations')
+    .select('*', { count: 'exact', head: true });
 
   const [recentActivity, monthlyTrend, forecastRuns] = await Promise.all([
     supabase
@@ -74,10 +67,11 @@ async function getSummary(userId) {
       total_branches: totalBranches.count || 0,
       total_stock: totalStock,
       total_value: totalValue,
-      critical_stock: critical,
-      low_stock: low,
-      overstock,
-      safe,
+      critical_stock: counts.critical,
+      low_stock: counts.low,
+      overstock: counts.overstock,
+      safe: counts.safe,
+      total_recommendations: totalRecs || 0,
     },
     recent_activity: recentActivity?.data || [],
     monthly_trend: monthlyTrend?.data || [],

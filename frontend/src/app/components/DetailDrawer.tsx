@@ -6,6 +6,7 @@ import { getById, type SparepartDetail } from "../services/inventory";
 import { StatusBadge } from "./shared/StatusBadge";
 import { StokMasukModal } from "./modals/StokMasukModal";
 import { StokKeluarModal } from "./modals/StokKeluarModal";
+import { computeStatus } from "../utils/stockStatus";
 
 
 export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId: string | null; onClose: () => void; filterBranch?: string }) {
@@ -29,6 +30,11 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
   const last7Out = movements.filter(m => m.type === 'out').slice(0, 7).reduce((s, m) => s + Math.abs(m.quantity), 0);
   const trendUp = last7In > last7Out;
 
+  const activeBranchStock = filterBranch !== "all" ? part?.stock_by_branch.find(s => s.branch_id === filterBranch) : null;
+  const displayStatus = activeBranchStock
+    ? computeStatus(activeBranchStock.quantity, activeBranchStock.safety_stock, activeBranchStock.reorder_point, activeBranchStock.max_stock)
+    : (part?.status || 'safe');
+
   return (
     <>
       {partId && <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} style={{ backdropFilter: "blur(2px)" }} />}
@@ -48,7 +54,7 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
               <div className="min-w-0">
                 <div className="text-xs text-slate-400 mb-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{part.code}</div>
                 <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm leading-tight">{part.name}</div>
-                <div className="flex items-center gap-2 mt-1"><StatusBadge status={part.status} /><span className="text-xs text-slate-400">{part.category}</span></div>
+                <div className="flex items-center gap-2 mt-1"><StatusBadge status={displayStatus} /><span className="text-xs text-slate-400">{part.category}</span></div>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-2">
@@ -86,7 +92,7 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
             </div>
             <div>
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2.5">Stok per Cabang</div>
-              {part.stock_by_branch.map(b => (
+              {[...part.stock_by_branch].sort((a, b) => a.branch_name.localeCompare(b.branch_name)).map(b => (
                 <div key={b.branch_id} className="mb-2.5">
                   <div className="flex justify-between text-xs mb-1"><span className="text-slate-500">{b.branch_name}</span><span className="font-semibold text-slate-700 dark:text-slate-300">{b.quantity}</span></div>
                   <div className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min((b.quantity / 100) * 100, 100)}%` }} /></div>
@@ -116,7 +122,7 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
                   <p className="text-xs">7 transaksi terakhir: {last7In} masuk, {last7Out} keluar — {trendUp ? "cenderung meningkat" : "cenderung menurun"}</p>
                 </div>
               ) : null}
-              {part.status === "critical" && (
+              {displayStatus === "critical" && (
                 <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100 dark:border-red-800 text-red-700 dark:text-red-400">
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" /><p className="text-xs">Stok kritis — restock segera dibutuhkan</p>
                 </div>
