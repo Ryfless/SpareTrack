@@ -71,7 +71,7 @@ def cmd_serve(args):
     print(f"Auto-predict scheduler: every 1 hour")
     from api import app, start_scheduler
     start_scheduler()
-    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 
 def main():

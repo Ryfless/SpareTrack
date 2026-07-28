@@ -1,0 +1,68 @@
+name: Docker Build
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  docker:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          tags: |
+            ghcr.io/ryfless/sparetrack-backend:latest
+            ghcr.io/ryfless/sparetrack-backend:${{ github.event.workflow_run.head_sha }}
+
+      - name: Build & push inventory_ml
+        uses: docker/build-push-action@v5
+        with:
+          context: inventory_ml
+          push: true
+          tags: |
+            ghcr.io/ryfless/sparetrack-inventory-ml:latest
+            ghcr.io/ryfless/sparetrack-inventory-ml:${{ github.event.workflow_run.head_sha }}
+
+      - name: Trigger Render Deploy — Backend
+        env:
+          RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK_BACKEND" ]; then
+            curl -X POST "$RENDER_DEPLOY_HOOK_BACKEND"
+          else
+            echo "WARNING: RENDER_DEPLOY_HOOK_BACKEND not set — skipping"
+          fi
+
+      - name: Trigger Render Deploy — Inventory ML
+        env:
+          RENDER_DEPLOY_HOOK_INVENTORY_ML: ${{ secrets.RENDER_DEPLOY_HOOK_INVENTORY_ML }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK_INVENTORY_ML" ]; then
+            curl -X POST "$RENDER_DEPLOY_HOOK_INVENTORY_ML"
+          else
+            echo "WARNING: RENDER_DEPLOY_HOOK_INVENTORY_ML not set — skipping"
+          fi
