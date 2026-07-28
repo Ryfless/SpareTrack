@@ -17,6 +17,7 @@ const MIGRATION_FILES = [
   '012_branch_stocks_int.sql',
   '013_drop_current_stock.sql',
   '014_cleanup_restock_status.sql',
+  '016_create_login_history.sql',
 ];
 
 function getConnectionConfigs() {

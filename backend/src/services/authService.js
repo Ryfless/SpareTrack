@@ -53,7 +53,11 @@ async function loginUser(email, password) {
 
 async function requestOtp(email) {
   const { data, error: otpError } = await supabase.auth.signInWithOtp({ email });
-  if (otpError) throw otpError;
+  if (otpError) {
+    console.error('[OTP ERROR]', otpError);
+    throw otpError;
+  }
+  console.log('[OTP SENT]', { email, data });
   return data;
 }
 

@@ -51,19 +51,23 @@ export async function apiRequest<T = unknown>(
     if (qs) url += `?${qs}`;
   }
 
-  const response = await fetch(url, {
-    method,
-    headers: requestHeaders,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const result: ApiResponse<T> = await response.json();
-
-  if (!response.ok) {
-    throw new Error(result.message || 'An error occurred');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: requestHeaders,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    const result: ApiResponse<T> = await response.json();
+    if (!response.ok) {
+      throw new Error(result.message || 'An error occurred');
+    }
+    return result;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return result;
 }
 
 export const api = {

@@ -63,7 +63,7 @@ exports.exportCsv = async (req, res, next) => {
 
 exports.bulkTransfer = async (req, res, next) => {
   try {
-    const data = await inventoryService.bulkTransfer(req.body, req.user.id);
+    const data = await inventoryService.bulkTransfer(req.body, req.user.id, req.userRole);
     return success(res, data, `${data.items_transferred} item berhasil ditransfer`, null, 201);
   } catch (err) {
     next(err);

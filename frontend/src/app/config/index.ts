@@ -33,7 +33,7 @@ export const TRX_CFG: Record<string, { label: string; cls: string; icon: React.E
 
 export const ROLE_CFG: Record<Role, { label: string; cls: string; pages: PageId[] }> = {
   super_admin:  { label: "Super Admin",  cls: "bg-blue-100 text-blue-700",    pages: ["dashboard","inventory","restock","branches","transactions","reports","settings"] },
-  branch_admin: { label: "Admin Cabang", cls: "bg-emerald-100 text-emerald-700", pages: ["dashboard","inventory","restock","transactions"] },
+  branch_admin: { label: "Admin Cabang", cls: "bg-emerald-100 text-emerald-700", pages: ["dashboard","inventory","restock","transactions","settings"] },
 };
 
 export const NAV_SECTIONS = [
@@ -43,7 +43,7 @@ export const NAV_SECTIONS = [
                                   { id: "transactions" as PageId, label: "Transactions",       icon: ArrowLeftRight }] },
   { title: "MONITORING", items: [{ id: "branches"     as PageId, label: "Branch Monitoring",  icon: Building2      }], roles: ["super_admin" as Role] },
   { title: "REPORTS",    items: [{ id: "reports"      as PageId, label: "Reports",            icon: FileBarChart   }], roles: ["super_admin" as Role] },
-  { title: "SYSTEM",     items: [{ id: "settings"     as PageId, label: "Settings",           icon: Settings       }], roles: ["super_admin" as Role] },
+  { title: "SYSTEM",     items: [{ id: "settings"     as PageId, label: "Settings",           icon: Settings       }], roles: ["super_admin" as Role, "branch_admin" as Role] },
 ];
 
 export const PAGE_TITLES: Record<string, string> = {

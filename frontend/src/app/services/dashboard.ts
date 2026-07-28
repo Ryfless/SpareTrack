@@ -42,6 +42,17 @@ export interface ActivityItem {
   user_id: string;
 }
 
+export interface DemandPoint {
+  month: string;
+  actual: number | null;
+  predicted: number | null;
+}
+
+export async function getDemandForecast(): Promise<DemandPoint[]> {
+  const response = await api.get<DemandPoint[]>('/dashboard/demand-forecast');
+  return response.data;
+}
+
 export async function getRecentActivity(): Promise<ActivityItem[]> {
   const response = await api.get<ActivityItem[]>('/dashboard/recent-activity');
   return response.data;

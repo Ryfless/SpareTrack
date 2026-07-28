@@ -21,6 +21,13 @@ export interface RegisterData {
 export async function login(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+
+  try {
+    await api.post('/auth/login-history/login', { user_agent: navigator.userAgent });
+  } catch (e) {
+    console.error('[LoginHistory] Gagal mencatat login:', e);
+  }
+
   return data;
 }
 
@@ -42,8 +49,7 @@ export async function register(data: RegisterData) {
 }
 
 export async function requestOtp(email: string) {
-  const { error } = await supabase.auth.signInWithOtp({ email });
-  if (error) throw error;
+  await api.post('/auth/otp/request', { email });
 }
 
 export async function verifyOtp(email: string, token: string) {
@@ -66,6 +72,12 @@ export async function signInWithGoogle() {
 }
 
 export async function logout() {
+  try {
+    await api.post('/auth/login-history/logout');
+  } catch (e) {
+    console.error('[LoginHistory] Gagal mencatat logout:', e);
+  }
+
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }

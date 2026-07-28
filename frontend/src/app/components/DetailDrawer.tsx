@@ -4,16 +4,12 @@ import { toast } from "sonner";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { getById, type SparepartDetail } from "../services/inventory";
 import { StatusBadge } from "./shared/StatusBadge";
-import { StokMasukModal } from "./modals/StokMasukModal";
-import { StokKeluarModal } from "./modals/StokKeluarModal";
 import { computeStatus } from "../utils/stockStatus";
 
 
-export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId: string | null; onClose: () => void; filterBranch?: string }) {
+export function DetailDrawer({ partId, onClose, filterBranch = "all", onAction }: { partId: string | null; onClose: () => void; filterBranch?: string; onAction?: (action: string, sparepart?: SparepartDetail | null) => void }) {
   const [part, setPart] = useState<SparepartDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [stokMasukOpen, setStokMasukOpen] = useState(false);
-  const [stokKeluarOpen, setStokKeluarOpen] = useState(false);
 
   useEffect(() => {
     if (!partId) { setPart(null); return; }
@@ -38,8 +34,6 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
   return (
     <>
       {partId && <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} style={{ backdropFilter: "blur(2px)" }} />}
-      <StokMasukModal open={stokMasukOpen} onClose={() => setStokMasukOpen(false)} sparepart={part ?? undefined} />
-      <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} sparepart={part ?? undefined} />
       <div className={`fixed top-0 right-0 h-full w-96 max-w-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 z-50 flex flex-col shadow-2xl transition-transform duration-300 ${partId ? "translate-x-0" : "translate-x-full"}`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{part?.name ?? (loading ? "Memuat..." : "Detail Sparepart")}</div>
@@ -134,8 +128,8 @@ export function DetailDrawer({ partId, onClose, filterBranch = "all" }: { partId
         )}
         {part && (
           <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0 flex gap-2">
-            <button onClick={() => { setStokMasukOpen(true); }} className="flex-1 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all">Stok Masuk</button>
-            <button onClick={() => { setStokKeluarOpen(true); }} className="flex-1 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 active:scale-95 rounded-lg transition-all">Stok Keluar</button>
+            <button onClick={() => onAction?.("stok_masuk", part)} className="flex-1 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all">Stok Masuk</button>
+            <button onClick={() => onAction?.("stok_keluar", part)} className="flex-1 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 active:scale-95 rounded-lg transition-all">Stok Keluar</button>
           </div>
         )}
       </div>

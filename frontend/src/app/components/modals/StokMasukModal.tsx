@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ArrowDownRight, Info, Loader2 } from "lucide-react";
+import { ArrowDownRight, Info, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
 import { FormField } from "../shared/FormField";
@@ -9,7 +9,7 @@ import { create as createTransaction } from "../../services/transactions";
 import { inputCls } from "../../config";
 import type { SparepartDetail } from "../../services/inventory";
 
-export function StokMasukModal({ open, onClose, sparepart }: { open: boolean; onClose: () => void; sparepart?: SparepartDetail }) {
+export function StokMasukModal({ open, onClose, sparepart, userProfile, currentRole }: { open: boolean; onClose: () => void; sparepart?: SparepartDetail; userProfile?: { role: string; branch: string } | null; currentRole?: string }) {
   const [form, setForm] = useState({ sparepart_id: "", branch_id: "", jumlah: "", catatan: "" });
   const [spareparts, setSpareparts] = useState<Array<{ id: string; name: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
@@ -17,6 +17,7 @@ export function StokMasukModal({ open, onClose, sparepart }: { open: boolean; on
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<SparepartDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const isBranchAdmin = currentRole === "branch_admin";
 
   const activeSparepart = sparepart ?? detail;
 
@@ -27,7 +28,13 @@ export function StokMasukModal({ open, onClose, sparepart }: { open: boolean; on
     setLoading(true);
     Promise.all([
       !sparepart ? fetchInventory({ limit: 200 }).then(r => setSpareparts((r.data || []).map(s => ({ id: s.id, name: s.name })))) : Promise.resolve(),
-      fetchBranches().then(setBranches),
+      fetchBranches().then(b => {
+        setBranches(b);
+        if (isBranchAdmin && userProfile?.branch) {
+          const match = b.find(br => br.name === userProfile.branch || br.id === userProfile.branch);
+          if (match) setForm(f => ({ ...f, branch_id: match.id }));
+        }
+      }),
     ]).catch(() => toast.error("Gagal memuat data"))
       .finally(() => setLoading(false));
   }, [open, sparepart]);
@@ -76,7 +83,14 @@ export function StokMasukModal({ open, onClose, sparepart }: { open: boolean; on
         )}
         <FormField label="Cabang" required>
           {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
-            : <select value={form.branch_id} onChange={set("branch_id")} className={inputCls}><option value="">Pilih cabang</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+            : isBranchAdmin ? (
+              <div className="px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                <Lock size={12} className="text-slate-400" />
+                {branches.find(b => b.id === form.branch_id)?.name || "Memuat..."}
+              </div>
+            ) : (
+              <select value={form.branch_id} onChange={set("branch_id")} className={inputCls}><option value="">Pilih cabang</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+            )}
         </FormField>
         {selectedBranchStock !== null && (
           <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 text-xs">

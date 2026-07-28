@@ -499,7 +499,7 @@ async function exportCsv(query, res) {
   res.send(csvString);
 }
 
-async function bulkTransfer(data, userId) {
+async function bulkTransfer(data, userId, userRole) {
   const { items, source_branch_id, destination_branch_id, notes } = data;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -529,6 +529,26 @@ async function bulkTransfer(data, userId) {
     const err = new Error('Cabang asal tidak ditemukan');
     err.status = 404;
     throw err;
+  }
+
+  if (userRole === 'branch_admin') {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('branch')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profile?.branch) {
+      const { data: userBranch } = await supabase
+        .from('branches')
+        .select('id')
+        .or(`id.eq.${profile.branch},name.eq.${profile.branch}`)
+        .maybeSingle();
+      if (!userBranch || userBranch.id !== source_branch_id) {
+        const err = new Error('Anda hanya dapat mentransfer dari cabang Anda sendiri');
+        err.status = 403;
+        throw err;
+      }
+    }
   }
 
   const { data: destBranch } = await supabase

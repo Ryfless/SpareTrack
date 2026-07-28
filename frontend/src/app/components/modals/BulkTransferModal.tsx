@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeftRight, Save } from "lucide-react";
+import { ArrowLeftRight, Save, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
 import { FormField } from "../shared/FormField";
@@ -12,27 +12,32 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   selectedItems: SparepartListItem[];
+  userProfile?: { role: string; branch: string } | null;
+  currentRole?: string;
 }
 
-export function BulkTransferModal({ open, onClose, onSuccess, selectedItems }: Props) {
+export function BulkTransferModal({ open, onClose, onSuccess, selectedItems, userProfile, currentRole }: Props) {
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [sourceBranchId, setSourceBranchId] = useState("");
   const [destinationBranchId, setDestinationBranchId] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const isBranchAdmin = currentRole === "branch_admin";
 
   useEffect(() => {
-    getBranches().then(setAllBranches).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (open) {
-      setSourceBranchId("");
-      setDestinationBranchId("");
-      setNotes("");
-      setQuantities({});
-    }
+    if (!open) return;
+    setSourceBranchId("");
+    setDestinationBranchId("");
+    setNotes("");
+    setQuantities({});
+    getBranches().then(b => {
+      setAllBranches(b);
+      if (isBranchAdmin && userProfile?.branch) {
+        const match = b.find(br => br.name === userProfile.branch || br.id === userProfile.branch);
+        if (match) setSourceBranchId(match.id);
+      }
+    }).catch(() => {});
   }, [open]);
 
   useEffect(() => {
@@ -113,10 +118,17 @@ export function BulkTransferModal({ open, onClose, onSuccess, selectedItems }: P
 
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Cabang Asal" required>
-            <select value={sourceBranchId} onChange={e => setSourceBranchId(e.target.value)} className={inputCls}>
-              <option value="">-- Pilih Cabang Asal --</option>
-              {allBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            {isBranchAdmin ? (
+              <div className="px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                <Lock size={12} className="text-slate-400" />
+                {allBranches.find(b => b.id === sourceBranchId)?.name || "Memuat..."}
+              </div>
+            ) : (
+              <select value={sourceBranchId} onChange={e => setSourceBranchId(e.target.value)} className={inputCls}>
+                <option value="">-- Pilih Cabang Asal --</option>
+                {allBranches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            )}
           </FormField>
           <FormField label="Cabang Tujuan" required>
             <select value={destinationBranchId} onChange={e => setDestinationBranchId(e.target.value)} className={inputCls}>

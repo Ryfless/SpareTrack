@@ -7,6 +7,14 @@ export interface MonthlyTrendItem {
   revenue: number;
 }
 
+export interface StockHealthItem {
+  month: string;
+  critical: number;
+  low: number;
+  safe: number;
+  overstock: number;
+}
+
 export interface ReportSummary {
   period: { start: string; end: string };
   stock_movements: {
@@ -31,6 +39,12 @@ export interface ReportSummary {
     name: string;
     total_sold: number;
     avg_monthly: number;
+  };
+  stock_health: StockHealthItem[];
+  safe_stock_ratio: {
+    ratio: number;
+    safe_count: number;
+    total_items: number;
   };
 }
 

@@ -277,7 +277,7 @@ async function getLiveRecommendations({ branch_id }) {
       postpone_reason: '',
       postpone_until: null,
       days_to_stockout: currentStock > 0
-        ? Math.round(currentStock / Math.max(recommendedQty / 30, 1))
+        ? Math.round(currentStock / Math.max(avgPredicted / 30, 0.01))
         : 0,
       created_at: new Date().toISOString(),
     });
@@ -387,6 +387,34 @@ async function recommendations(query) {
   const stockMap = {};
   for (const s of bsData || []) stockMap[`${s.sparepart_id}|${s.branch_id}`] = s.quantity;
 
+  const { data: movData } = await supabase
+    .from('stock_movements')
+    .select('sparepart_id, branch_id, quantity')
+    .in('sparepart_id', spIds)
+    .in('branch_id', brIds)
+    .eq('type', 'out')
+    .gte('created_at', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+
+  const movMap = {};
+  for (const m of movData || []) {
+    const k = `${m.sparepart_id}|${m.branch_id}`;
+    movMap[k] = (movMap[k] || 0) + Math.abs(m.quantity);
+  }
+
+  const { data: fcData } = await supabase
+    .from('forecast_series')
+    .select('sparepart_id, branch_id, predicted_quantity')
+    .in('sparepart_id', spIds)
+    .in('branch_id', brIds);
+
+  const fcAgg = {};
+  const fcCnt = {};
+  for (const f of fcData || []) {
+    const k = `${f.sparepart_id}|${f.branch_id}`;
+    fcAgg[k] = (fcAgg[k] || 0) + Number(f.predicted_quantity);
+    fcCnt[k] = (fcCnt[k] || 0) + 1;
+  }
+
   const sorted = rows
     .map(r => {
       const currentStock = stockMap[`${r.sparepart_id}|${r.branch_id}`] ?? 0;
@@ -408,9 +436,13 @@ async function recommendations(query) {
         notes: r.notes,
         postpone_reason: r.postpone_reason || '',
         postpone_until: r.postpone_until || null,
-        days_to_stockout: currentStock > 0
-          ? Math.round(currentStock / Math.max(r.recommended_qty / 30, 1))
-          : 0,
+        days_to_stockout: (() => {
+          if (currentStock <= 0) return 0;
+          const k = `${r.sparepart_id}|${r.branch_id}`;
+          const fcAvg = (fcAgg[k] || 0) / Math.max(fcCnt[k] || 1, 1) / 30;
+          const histAvg = (movMap[k] || 0) / 90;
+          return Math.round(currentStock / Math.max(fcAvg || histAvg, 0.01));
+        })(),
         created_at: r.created_at,
       };
     })

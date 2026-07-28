@@ -1,7 +1,114 @@
 const { supabaseAdmin: supabase } = require('../config/supabase');
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
-const { computeStatus } = require('../utils/stockStatus');
+const { computeStatus, STOCK_STATUS } = require('../utils/stockStatus');
+
+function getMonthKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function generateMonthEnds(start, end) {
+  const result = [];
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endD = new Date(end);
+  while (cur <= endD) {
+    const me = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+    result.push(me);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return result;
+}
+
+async function getStockHealth({ branch_id, start_date, end_date }) {
+  const { data: stocks } = await supabase
+    .from('branch_stocks')
+    .select('sparepart_id, branch_id, quantity, safety_stock, reorder_point, max_stock')
+    .order('sparepart_id');
+  if (!stocks || stocks.length === 0) return [];
+
+  const start = new Date(start_date || Date.now() - 30 * 86400000);
+  const end = new Date(end_date || Date.now());
+  const monthEnds = generateMonthEnds(start, end);
+  if (monthEnds.length === 0) return [];
+
+  // Rekonstruksi perlu movements SETELAH month-end terawal
+  const afterFirst = new Date(monthEnds[0]);
+  afterFirst.setDate(afterFirst.getDate() + 1);
+
+  let movQ = supabase
+    .from('stock_movements')
+    .select('sparepart_id, branch_id, type, quantity, created_at')
+    .gte('created_at', afterFirst.toISOString().split('T')[0]);
+
+  const { data: movements } = await movQ;
+
+  // Hitung net change per (sparepart, branch, month)
+  const netByKey = {};
+  for (const m of (movements || [])) {
+    const mk = getMonthKey(new Date(m.created_at));
+    const k = `${m.sparepart_id}|${m.branch_id}`;
+    if (!netByKey[k]) netByKey[k] = {};
+    if (!netByKey[k][mk]) netByKey[k][mk] = 0;
+    if (m.type === 'in') netByKey[k][mk] += m.quantity;
+    else if (m.type === 'out') netByKey[k][mk] -= Math.abs(m.quantity);
+    else if (m.type === 'adjustment') netByKey[k][mk] += (m.quantity || 0);
+    else if (m.type === 'transfer') netByKey[k][mk] -= Math.abs(m.quantity);
+  }
+
+  // Gabung semua month keys (data + chart)
+  const chartMks = monthEnds.map(me => getMonthKey(me));
+  const allMks = [...new Set([...chartMks, ...Object.values(netByKey).flatMap(n => Object.keys(n))])].sort();
+
+  // Precompute cumulative setelah tiap month
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const healthMap = {};
+
+  for (const stock of stocks) {
+    if (branch_id && stock.branch_id !== branch_id) continue;
+    const k = `${stock.sparepart_id}|${stock.branch_id}`;
+    const nets = netByKey[k] || {};
+
+    let totalAfter = 0;
+    const cumAfter = {};
+    for (let i = allMks.length - 1; i >= 0; i--) {
+      cumAfter[allMks[i]] = totalAfter;
+      totalAfter += (nets[allMks[i]] || 0);
+    }
+
+    for (const me of monthEnds) {
+      const mk = getMonthKey(me);
+      const stok = Math.max(0, Math.round(stock.quantity - (cumAfter[mk] || 0)));
+      const status = computeStatus(stok, stock.safety_stock || 0, stock.reorder_point || 0, stock.max_stock || 0);
+
+      if (!healthMap[mk]) {
+        healthMap[mk] = { month: monthLabels[me.getMonth()], critical: 0, low: 0, safe: 0, overstock: 0 };
+      }
+      healthMap[mk][status]++;
+    }
+  }
+
+  return Object.entries(healthMap).sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
+}
+
+async function getSafeStockRatio(branch_id) {
+  let q = supabase
+    .from('branch_stocks')
+    .select('quantity, safety_stock, reorder_point, max_stock');
+  if (branch_id) q = q.eq('branch_id', branch_id);
+  const { data: stocks } = await q;
+  if (!stocks || stocks.length === 0) return { ratio: 0, safe_count: 0, total_items: 0 };
+
+  let safe = 0;
+  for (const s of stocks) {
+    const status = computeStatus(s.quantity, s.safety_stock || 0, s.reorder_point || 0, s.max_stock || 0);
+    if (status === STOCK_STATUS.SAFE) safe++;
+  }
+  return {
+    ratio: Math.round((safe / stocks.length) * 100),
+    safe_count: safe,
+    total_items: stocks.length,
+  };
+}
 
 async function summary(query) {
   const { branch_id, start_date, end_date } = query;
@@ -70,14 +177,14 @@ async function summary(query) {
   // Critical items — using safety_stock comparison
   let critQuery = supabase
     .from('branch_stocks')
-    .select('*, spareparts(name, code, safety_stock), branches(name)');
+    .select('*, spareparts(name, code), branches(name)');
 
   if (branch_id) critQuery = critQuery.eq('branch_id', branch_id);
 
   const { data: allBranchStocks } = await critQuery;
 
   const criticalItems = (allBranchStocks || []).filter(
-    bs => computeStatus(bs.quantity, bs.spareparts?.safety_stock, bs.reorder_point, bs.max_stock) === 'critical'
+    bs => computeStatus(bs.quantity, bs.safety_stock || 0, bs.reorder_point, bs.max_stock) === 'critical'
   );
 
   // Top 1 sparepart by sales volume
@@ -104,6 +211,11 @@ async function summary(query) {
     };
   }
 
+  const [stock_health, safe_stock_ratio] = await Promise.all([
+    getStockHealth({ branch_id, start_date, end_date }),
+    getSafeStockRatio(branch_id),
+  ]);
+
   return {
     period: {
       start: start_date || defaultStart,
@@ -128,6 +240,8 @@ async function summary(query) {
     },
     monthly_trend: monthlyTrend,
     top_sparepart: topSparepart,
+    stock_health,
+    safe_stock_ratio,
   };
 }
 
@@ -159,11 +273,11 @@ async function fetchTransactions(startDate, endDate, branchId) {
 async function fetchCriticalItems() {
   const { data } = await supabase
     .from('branch_stocks')
-    .select('*, spareparts(name, code, safety_stock, reorder_point), branches(name)')
+    .select('*, spareparts(name, code), branches(name)')
     .order('quantity', { ascending: true });
 
   return (data || []).filter(
-    bs => computeStatus(bs.quantity, bs.spareparts?.safety_stock, bs.reorder_point, bs.max_stock) === 'critical'
+    bs => computeStatus(bs.quantity, bs.safety_stock || 0, bs.reorder_point, bs.max_stock) === 'critical'
   );
 }
 

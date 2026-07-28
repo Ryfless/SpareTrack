@@ -79,6 +79,59 @@ async function getSummary(userId) {
   };
 }
 
+async function getDemandForecast() {
+  const BLN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+  const [movementsRes, forecastsRes] = await Promise.all([
+    supabase
+      .from('stock_movements')
+      .select('sparepart_id, quantity, created_at')
+      .eq('type', 'out')
+      .gte('created_at', startDate.toISOString()),
+    supabase
+      .from('forecast_series')
+      .select('sparepart_id, month, predicted_quantity')
+      .gte('month', startDate.toISOString().split('T')[0]),
+  ]);
+
+  const actualAgg = {};
+  const monthLabels = {};
+  for (const m of movementsRes.data || []) {
+    const d = new Date(m.created_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!actualAgg[key]) actualAgg[key] = { sum: 0, items: new Set() };
+    actualAgg[key].sum += Math.abs(m.quantity);
+    actualAgg[key].items.add(m.sparepart_id);
+    if (!monthLabels[key]) monthLabels[key] = `${BLN[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  const predAgg = {};
+  for (const f of forecastsRes.data || []) {
+    const d = new Date(f.month);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!predAgg[key]) predAgg[key] = { sum: 0, items: new Set() };
+    predAgg[key].sum += Number(f.predicted_quantity);
+    predAgg[key].items.add(f.sparepart_id);
+    if (!monthLabels[key]) monthLabels[key] = `${BLN[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  const allKeys = [...new Set([...Object.keys(actualAgg), ...Object.keys(predAgg)])].sort();
+
+  const data = allKeys.map(key => {
+    const a = actualAgg[key];
+    const p = predAgg[key];
+    return {
+      month: monthLabels[key] || key,
+      actual: a ? Math.round(a.sum / a.items.size) : null,
+      predicted: p ? Math.round(p.sum / p.items.size) : null,
+    };
+  });
+
+  return data;
+}
+
 async function getRecentActivity(userId) {
   const { data, error } = await supabase
     .from('activities')
@@ -90,4 +143,4 @@ async function getRecentActivity(userId) {
   return data;
 }
 
-module.exports = { getSummary, getRecentActivity };
+module.exports = { getSummary, getRecentActivity, getDemandForecast };

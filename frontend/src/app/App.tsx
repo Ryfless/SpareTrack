@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard, Package, ShoppingCart, ArrowLeftRight,
-  FileBarChart, Settings, Bell, Search, Menu, X, Sun, Moon, Shield,
+  FileBarChart, Settings, Bell, Search, Menu, X, Sun, Moon,
   ChevronRight, BarChart3, User, LogOut, Loader2,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
@@ -22,6 +22,7 @@ import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { ForgotPage } from "./pages/auth/ForgotPage";
 import { OTPPage } from "./pages/auth/OTPPage";
+import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
 import { DashboardPage } from "./pages/app/DashboardPage";
 import { InventoryPage } from "./pages/app/InventoryPage";
 import { RestockPage } from "./pages/app/RestockPage";
@@ -32,6 +33,7 @@ import { SettingsPage } from "./pages/app/SettingsPage";
 import { list as fetchNotifsApi, getUnreadCount, markRead as markReadApi, markAllRead as markAllReadApi } from "./services/notifications";
 import { api } from "./services/client";
 import type { NotificationItem } from "./services/notifications";
+import type { SparepartDetail } from "./services/inventory";
 import type { AppState, PageId, Role } from "./types";
 
 interface UserProfile {
@@ -46,6 +48,8 @@ interface UserProfile {
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>("loading");
+  const appStateRef = useRef(appState);
+  appStateRef.current = appState;
   const [page, setPage] = useState<PageId>("dashboard");
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [inventoryFilter, setInventoryFilter] = useState("all");
@@ -66,6 +70,7 @@ export default function App() {
   const [stokMasukOpen, setStokMasukOpen] = useState(false);
   const [stokKeluarOpen, setStokKeluarOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [modalSparepart, setModalSparepart] = useState<SparepartDetail | null>(null);
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -97,7 +102,7 @@ export default function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
+      if (event === 'SIGNED_IN' && session && appStateRef.current !== "otp" && appStateRef.current !== "reset_password") {
         fetchProfile();
       }
     });
@@ -161,9 +166,13 @@ export default function App() {
           theme_preference: localStorage.getItem('theme') || 'light',
         });
       }
-      setAppState("app");
+      if (appStateRef.current !== "otp" && appStateRef.current !== "reset_password") {
+        setAppState("app");
+      }
     } catch {
-      setAppState("landing");
+      if (appStateRef.current !== "otp" && appStateRef.current !== "reset_password") {
+        setAppState("landing");
+      }
     }
   }
 
@@ -172,10 +181,11 @@ export default function App() {
     if (p === "restock") { setRestockFilter(filter || ""); }
     else { setRestockFilter(""); if (filter) setInventoryFilter(filter); else if (p !== "inventory") setInventoryFilter("all"); }
   }
-  function quickAction(action: string) {
+  function quickAction(action: string, sparepart?: SparepartDetail | null) {
+    setModalSparepart(null);
     if (action === "add_item")    setAddItemOpen(true);
-    else if (action === "stok_masuk")  setStokMasukOpen(true);
-    else if (action === "stok_keluar") setStokKeluarOpen(true);
+    else if (action === "stok_masuk")  { setModalSparepart(sparepart || null); setStokMasukOpen(true); }
+    else if (action === "stok_keluar") { setModalSparepart(sparepart || null); setStokKeluarOpen(true); }
     else if (action === "transfer")    setTransferOpen(true);
     else if (action === "po")          navigate("restock");
     else toast.info("Fitur ini belum tersedia pada mode demo");
@@ -231,35 +241,33 @@ export default function App() {
     } catch { /* ignore */ }
   }
 
-  if (appState === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <Loader2 size={32} className="animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  // Auth screens
-  if (appState === "landing")  return <LandingPage onLogin={() => setAppState("login")} />;
-  if (appState === "login")    return <LoginPage onSuccess={() => { fetchProfile(); }} onRegister={() => setAppState("register")} onForgot={() => setAppState("forgot")} />;
-  if (appState === "register") return <RegisterPage onLogin={() => setAppState("login")} />;
-  if (appState === "forgot")   return <ForgotPage onOTP={(email) => { setOtpEmail(email); setAppState("otp"); }} onLogin={() => setAppState("login")} />;
-  if (appState === "otp")      return <OTPPage email={otpEmail} onSuccess={() => fetchProfile()} onBack={() => setAppState("forgot")} />;
-
   const allowedPages = ROLE_CFG[currentRole].pages;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <>
       <Toaster position="top-right" richColors />
+      {appState === "loading" && (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+          <Loader2 size={32} className="animate-spin text-blue-600" />
+        </div>
+      )}
+      {appState === "landing" && <LandingPage onLogin={() => setAppState("login")} />}
+      {appState === "login" && <LoginPage onSuccess={() => { fetchProfile(); }} onRegister={() => setAppState("register")} onForgot={() => setAppState("forgot")} onBack={() => setAppState("landing")} />}
+      {appState === "register" && <RegisterPage onLogin={() => setAppState("login")} />}
+      {appState === "forgot" && <ForgotPage onOTP={(email) => { setOtpEmail(email); setAppState("otp"); }} onLogin={() => setAppState("login")} />}
+      {appState === "otp" && <OTPPage email={otpEmail} onSuccess={() => setAppState("reset_password")} onBack={() => setAppState("forgot")} />}
+      {appState === "reset_password" && <ResetPasswordPage onComplete={() => setAppState("login")} />}
+      {appState === "app" && (
+        <div className="flex h-screen overflow-hidden bg-background">
 
       {/* Global modals */}
       <AddItemModal    open={addItemOpen}    onClose={() => setAddItemOpen(false)}    />
-      <StokMasukModal  open={stokMasukOpen}  onClose={() => setStokMasukOpen(false)}  />
-      <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} />
-      <TransferModal   open={transferOpen}   onClose={() => setTransferOpen(false)}   />
+      <StokMasukModal  open={stokMasukOpen}  onClose={() => { setStokMasukOpen(false); setModalSparepart(null); }}  userProfile={userProfile} currentRole={currentRole} sparepart={modalSparepart ?? undefined} />
+      <StokKeluarModal open={stokKeluarOpen} onClose={() => { setStokKeluarOpen(false); setModalSparepart(null); }} userProfile={userProfile} currentRole={currentRole} sparepart={modalSparepart ?? undefined} />
+      <TransferModal   open={transferOpen}   onClose={() => setTransferOpen(false)}   userProfile={userProfile} currentRole={currentRole} />
       <EditProfileModal open={profileEditOpen} onClose={() => setProfileEditOpen(false)} onSaved={() => fetchProfile()} profile={userProfile} />
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onNavigate={navigate} onAction={quickAction} />
-      <DetailDrawer partId={selectedPart} onClose={() => setSelectedPart(null)} filterBranch={inventoryBranch} />
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onNavigate={navigate} onAction={quickAction} onSelectPart={setSelectedPart} />
+      <DetailDrawer partId={selectedPart} onClose={() => setSelectedPart(null)} filterBranch={inventoryBranch} onAction={quickAction} />
 
       {sidebarOpen && <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
@@ -269,11 +277,6 @@ export default function App() {
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0"><BarChart3 size={15} className="text-white" /></div>
           <div className="min-w-0 flex-1"><div className="text-sm font-bold text-white">SpareTrack</div><div className="text-xs" style={{ color:"#6880b8" }}>Multi-Branch System</div></div>
           <button className="lg:hidden text-white/50 hover:text-white" onClick={() => setSidebarOpen(false)}><X size={15} /></button>
-        </div>
-        <div className="px-3 pt-3">
-          <button onClick={() => setCurrentRole(r => r==="super_admin"?"branch_admin":"super_admin")} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all" style={{ background:"rgba(255,255,255,0.05)", color:"#8898c4" }} title="Klik ganti role (demo)">
-            <Shield size={12} /><span className="font-medium" style={{ color:"#a8bce0" }}>{ROLE_CFG[currentRole].label}</span><span className="ml-auto opacity-40">demo</span>
-          </button>
         </div>
         <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-3">
           {NAV_SECTIONS.map(section => {
@@ -329,7 +332,7 @@ export default function App() {
             <div className="hidden lg:block">
               <button onClick={() => setCmdOpen(true)} className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-400 transition-all">
                 <Search size={12} className="text-slate-400" />
-                <span className="text-sm text-slate-400 w-36">Cari atau buka...</span>
+                <span className="text-sm text-slate-400 w-56">Cari menu, aksi, atau sparepart...</span>
                 <kbd className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 text-slate-500 rounded border border-slate-300 dark:border-slate-600" style={{ fontFamily:"'JetBrains Mono', monospace" }}>⌘K</kbd>
               </button>
             </div>
@@ -383,7 +386,7 @@ export default function App() {
             </div>
             {/* Profile */}
             <div className="relative">
-              <button onClick={() => { setProfileDropOpen(!profileDropOpen); setNotifOpen(false); }} className="w-7 h-7 rounded-full bg-blue-700 flex items-center justify-center text-xs font-bold text-white hover:bg-blue-800 transition">{userProfile?.full_name?.charAt(0) || 'A'}</button>
+              <button onClick={() => { setProfileDropOpen(!profileDropOpen); setNotifOpen(false); }} className="w-7 h-7 rounded-full bg-blue-700 hover:bg-blue-800 flex items-center justify-center text-xs font-bold text-white transition">{userProfile?.full_name?.charAt(0) || 'A'}</button>
               {profileDropOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setProfileDropOpen(false)} />
@@ -413,14 +416,16 @@ export default function App() {
         {/* CONTENT */}
         <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-5">
           {page === "dashboard"    && !selectedPart && <DashboardPage onNavigate={navigate} onAction={quickAction} />}
-          {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} filterBranch={inventoryBranch} onBranchChange={setInventoryBranch} />}
+          {page === "inventory"    && <InventoryPage onSelectPart={setSelectedPart} initialFilter={inventoryFilter} filterBranch={inventoryBranch} onBranchChange={setInventoryBranch} userProfile={userProfile} currentRole={currentRole} onAction={quickAction} />}
           {page === "restock"      && !selectedPart && <RestockPage userProfile={userProfile} scrollTo={restockFilter} />}
           {page === "branches"     && !selectedPart && <BranchesPage />}
-          {page === "transactions" && !selectedPart && <TransactionsPage userProfile={userProfile} />}
+          {page === "transactions" && !selectedPart && <TransactionsPage userProfile={userProfile} onAction={quickAction} />}
           {page === "reports"      && !selectedPart && <ReportsPage userProfile={userProfile} />}
-          {page === "settings"     && !selectedPart && <SettingsPage onEditProfile={() => setProfileEditOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
-        </main>
+          {page === "settings"     && !selectedPart && <SettingsPage onEditProfile={() => setProfileEditOpen(true)} currentRole={currentRole} />}
+          </main>
+        </div>
       </div>
-    </div>
+      )}
+    </>
   );
 }

@@ -68,8 +68,10 @@ def cmd_serve(args):
     port = args.port or 5001
     print(f"Starting Flask server on port {port}...")
     print(f"Dashboard: http://localhost:{port}/dashboard")
-    from api import app
-    app.run(host="0.0.0.0", port=port, debug=True)
+    print(f"Auto-predict scheduler: every 1 hour")
+    from api import app, start_scheduler
+    start_scheduler()
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
 
 
 def main():

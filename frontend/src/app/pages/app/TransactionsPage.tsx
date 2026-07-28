@@ -5,9 +5,6 @@ import { Card } from "../../components/shared/Card";
 import { EmptyState } from "../../components/shared/EmptyState";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { BranchSelect } from "../../components/shared/BranchSelect";
-import { StokMasukModal } from "../../components/modals/StokMasukModal";
-import { StokKeluarModal } from "../../components/modals/StokKeluarModal";
-import { TransferModal } from "../../components/modals/TransferModal";
 import { TRX_CFG } from "../../config";
 import { list as fetchTransactions, type Transaction } from "../../services/transactions";
 import type { ApiResponse } from "../../services/client";
@@ -15,6 +12,7 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 
 interface Props {
   userProfile?: { role: string; branch: string } | null;
+  onAction?: (action: string) => void;
 }
 
 const MONTHS = [
@@ -35,7 +33,7 @@ function getMonthBounds(monthVal: string) {
   return { start_date: start, end_date: end + "T23:59:59Z" };
 }
 
-export function TransactionsPage({ userProfile }: Props) {
+export function TransactionsPage({ userProfile, onAction }: Props) {
   const [items, setItems] = useState<Transaction[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, total_pages: 0 });
   const [loading, setLoading] = useState(true);
@@ -44,9 +42,7 @@ export function TransactionsPage({ userProfile }: Props) {
   const [page, setPage] = useState(1);
   const [monthFrom, setMonthFrom] = useState("");
   const [monthTo, setMonthTo] = useState("");
-  const [stokMasukOpen, setStokMasukOpen] = useState(false);
-  const [stokKeluarOpen, setStokKeluarOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
+
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -103,9 +99,6 @@ export function TransactionsPage({ userProfile }: Props) {
 
   return (
     <div className="space-y-5">
-      <StokMasukModal open={stokMasukOpen} onClose={() => setStokMasukOpen(false)} />
-      <StokKeluarModal open={stokKeluarOpen} onClose={() => setStokKeluarOpen(false)} />
-      <TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} />
       <div className="flex flex-wrap gap-3 items-center">
         <div className="flex gap-0.5 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
           {["all", "in", "out", "transfer"].map(t => <button key={t} onClick={() => { setTypeFilter(t); setPage(1); }} className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${typeFilter === t ? "bg-blue-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>{t === "all" ? "Semua" : TRX_CFG[t]?.label ?? t}</button>)}
@@ -127,9 +120,9 @@ export function TransactionsPage({ userProfile }: Props) {
           Bulan Ini
         </button>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => setStokMasukOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-lg transition-all shadow-sm"><ArrowDownRight size={13} />Stok Masuk</button>
-          <button onClick={() => setStokKeluarOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 rounded-lg transition-all shadow-sm"><ArrowUpRight size={13} />Stok Keluar</button>
-          <button onClick={() => setTransferOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Activity size={13} />Transfer</button>
+          <button onClick={() => onAction?.("stok_masuk")} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-lg transition-all shadow-sm"><ArrowDownRight size={13} />Stok Masuk</button>
+          <button onClick={() => onAction?.("stok_keluar")} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 rounded-lg transition-all shadow-sm"><ArrowUpRight size={13} />Stok Keluar</button>
+          <button onClick={() => onAction?.("transfer")} className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Activity size={13} />Transfer</button>
         </div>
       </div>
       <Card className="overflow-hidden">

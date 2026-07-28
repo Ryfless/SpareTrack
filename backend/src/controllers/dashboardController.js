@@ -10,6 +10,15 @@ exports.getSummary = async (req, res, next) => {
   }
 };
 
+exports.getDemandForecast = async (req, res, next) => {
+  try {
+    const data = await dashboardService.getDemandForecast();
+    return success(res, data, 'OK');
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.getRecentActivity = async (req, res, next) => {
   try {
     const data = await dashboardService.getRecentActivity(req.user.id);

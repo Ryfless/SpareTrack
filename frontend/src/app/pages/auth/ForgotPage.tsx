@@ -23,7 +23,9 @@ export function ForgotPage({ onOTP, onLogin }: { onOTP: (email: string) => void;
     try {
       await requestOtp(email);
       toast.success(`Kode OTP dikirim ke ${email}`);
+      setLoading(false);
       onOTP(email);
+      return;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal mengirim OTP";
       if (msg.includes("429") || msg.includes("rate") || msg.includes("Too Many Requests") || msg.includes("over_email_send_rate_limit")) {
@@ -32,7 +34,6 @@ export function ForgotPage({ onOTP, onLogin }: { onOTP: (email: string) => void;
       } else {
         toast.error(msg);
       }
-    } finally {
       setLoading(false);
     }
   }

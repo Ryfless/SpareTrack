@@ -9,7 +9,6 @@ import { StatusBadge } from "../../components/shared/StatusBadge";
 import { EmptyState } from "../../components/shared/EmptyState";
 import { Skeleton } from "../../components/shared/Skeleton";
 import { Tooltip } from "../../components/shared/Tooltip";
-import { AddItemModal } from "../../components/modals/AddItemModal";
 import { EditItemModal } from "../../components/modals/EditItemModal";
 import { BulkTransferModal } from "../../components/modals/BulkTransferModal";
 import { list as fetchInventory, exportCsv, type SparepartListItem } from "../../services/inventory";
@@ -18,7 +17,7 @@ import { getCategories, getSuppliers } from "../../services/references";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 import type { ApiResponse } from "../../services/client";
 
-export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranch: externalBranch, onBranchChange }: { onSelectPart: (id: string) => void; initialFilter?: string; filterBranch?: string; onBranchChange?: (v: string) => void }) {
+export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranch: externalBranch, onBranchChange, userProfile, currentRole, onAction }: { onSelectPart: (id: string) => void; initialFilter?: string; filterBranch?: string; onBranchChange?: (v: string) => void; userProfile?: { role: string; branch: string } | null; currentRole?: string; onAction?: (action: string) => void }) {
   const [items, setItems] = useState<SparepartListItem[]>([]);
   const [meta, setMeta] = useState({ page: 1, limit: 20, total: 0, total_pages: 0, counts: { total: 0, safe: 0, low: 0, critical: 0, overstock: 0 } });
   const [loading, setLoading] = useState(true);
@@ -35,7 +34,6 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
   const [sortOrder, setSortOrder] = useState("asc");
   const [page, setPage] = useState(1);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkTransferOpen, setBulkTransferOpen] = useState(false);
   const [editItemId, setEditItemId] = useState<string | null>(null);
@@ -43,13 +41,28 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
   const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string }>>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
+  const isBranchAdmin = currentRole === "branch_admin";
+
   useEffect(() => {
     Promise.all([
       getCategories().then(setCategories).catch(() => {}),
       getSuppliers().then(setSuppliers).catch(() => {}),
-      getBranches().then(setBranches).catch(() => {}),
+      getBranches().then(b => {
+        setBranches(b);
+        if (isBranchAdmin && userProfile?.branch) {
+          const match = b.find(br => br.name === userProfile.branch || br.id === userProfile.branch);
+          if (match) setFilterBranch(match.id);
+        }
+      }).catch(() => {}),
     ]);
   }, []);
+
+  useEffect(() => {
+    if (isBranchAdmin && userProfile?.branch && branches.length > 0) {
+      const match = branches.find(br => br.name === userProfile.branch || br.id === userProfile.branch);
+      if (match && filterBranch !== match.id) setFilterBranch(match.id);
+    }
+  }, [isBranchAdmin, userProfile?.branch, filterBranch, branches.length]);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -127,7 +140,6 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
 
   return (
     <div className="space-y-4">
-      <AddItemModal open={addOpen} onClose={() => setAddOpen(false)} />
       <EditItemModal open={editItemId !== null} sparepartId={editItemId} onClose={() => setEditItemId(null)} onSuccess={loadData} />
       {selected.size > 0 && (
         <BulkTransferModal
@@ -135,6 +147,8 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
           onClose={() => setBulkTransferOpen(false)}
           onSuccess={loadData}
           selectedItems={items.filter(i => selected.has(i.id))}
+          userProfile={userProfile}
+          currentRole={currentRole}
         />
       )}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -161,7 +175,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
           <button onClick={() => setFilterOpen(!filterOpen)} className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition ${filterOpen ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 text-blue-700" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100"}`}>
             <Sliders size={13} />Filter{(filterStatus !== "all" || filterCat !== "all" || filterSup !== "all" || filterBranch !== "all") && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />}
           </button>
-          <button onClick={() => setAddOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah Item</button>
+          <button onClick={() => onAction?.("add_item")} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-lg transition-all shadow-sm"><Plus size={13} />Tambah Item</button>
           <button onClick={async () => {
             try {
               const blob = await exportCsv({
@@ -190,7 +204,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
               { l: "Status", v: filterStatus, set: (v: string) => { setFilterStatus(v); setPage(1); }, opts: [["all", "Semua Status"], ["safe", "Aman"], ["low", "Menipis"], ["critical", "Kritis"], ["overstock", "Overstock"]] as [string, string][] },
               { l: "Kategori", v: filterCat, set: (v: string) => { setFilterCat(v); setPage(1); }, opts: [["all", "Semua"], ...categories.map(c => [c.id, c.name] as [string, string])] },
               { l: "Supplier", v: filterSup, set: (v: string) => { setFilterSup(v); setPage(1); }, opts: [["all", "Semua"], ...suppliers.map(s => [s.id, s.name] as [string, string])] },
-              { l: "Cabang", v: filterBranch, set: (v: string) => { setFilterBranch(v); setPage(1); }, opts: [["all", "Semua"], ...branches.map(b => [b.id, b.name] as [string, string])] },
+              ...(!isBranchAdmin ? [{ l: "Cabang", v: filterBranch, set: (v: string) => { setFilterBranch(v); setPage(1); }, opts: [["all", "Semua"], ...branches.map(b => [b.id, b.name] as [string, string])] }] : []),
               { l: "Urutkan", v: sortBy + "|" + sortOrder, set: (v: string) => { const [s, o] = v.split("|"); setSortBy(s); setSortOrder(o); setPage(1); }, opts: [["name|asc", "Nama A–Z"], ["name|desc", "Nama Z–A"], ["code|asc", "Kode A–Z"], ["price|asc", "Harga ↑"], ["price|desc", "Harga ↓"], ["status|asc", "Status A–Z"], ["supplier|asc", "Supplier A–Z"], ["category|asc", "Kategori A–Z"]] as [string, string][] },
             ].map(f => (
               <div key={f.l}><label className="block text-xs text-slate-500 mb-1">{f.l}</label>
@@ -199,7 +213,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
                 </select>
               </div>
             ))}
-            <div className="flex items-end"><button onClick={() => { setFilterStatus("all"); setFilterCat("all"); setFilterSup("all"); setFilterBranch("all"); setPage(1); }} className="text-xs text-blue-600 hover:underline">Reset filter</button></div>
+            <div className="flex items-end"><button onClick={() => { setFilterStatus("all"); setFilterCat("all"); setFilterSup("all"); if (!isBranchAdmin) setFilterBranch("all"); setPage(1); }} className="text-xs text-blue-600 hover:underline">Reset filter</button></div>
           </div>
         )}
       </Card>
@@ -220,7 +234,7 @@ export function InventoryPage({ onSelectPart, initialFilter = "all", filterBranc
             </tr></thead>
             <tbody>
               {items.length === 0
-                ? <tr><td colSpan={filterBranch === "all" ? 6 + (items[0]?.stock_by_branch.length || branches.length) : 8}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => setAddOpen(true) }} /></td></tr>
+                ? <tr><td colSpan={filterBranch === "all" ? 6 + (items[0]?.stock_by_branch.length || branches.length) : 8}><EmptyState icon={PackageSearch} title="Tidak ada sparepart" description="Coba ubah filter atau tambahkan sparepart baru." action={{ label: "Tambah Sparepart", onClick: () => onAction?.("add_item") }} /></td></tr>
                 : items.map(part => {
                     const branchNames = (items[0]?.stock_by_branch.map(b => b.branch_name) || []).sort((a, b) => a.localeCompare(b));
                     const stockByBranchName = Object.fromEntries(part.stock_by_branch.map(b => [b.branch_name, b.quantity]));

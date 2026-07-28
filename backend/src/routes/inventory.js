@@ -5,7 +5,7 @@ const { authenticate, authorize } = require('../middlewares/auth');
 const router = Router();
 
 router.get('/export/csv', authenticate, exportCsv);
-router.post('/bulk/transfer', authenticate, authorize('super_admin'), bulkTransfer);
+router.post('/bulk/transfer', authenticate, authorize('super_admin', 'branch_admin'), bulkTransfer);
 router.get('/', authenticate, list);
 router.get('/:id', authenticate, detail);
 router.post('/', authenticate, authorize('super_admin'), create);

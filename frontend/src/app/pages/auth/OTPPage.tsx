@@ -4,12 +4,12 @@ import { toast } from "sonner";
 import { verifyOtp, requestOtp } from "../../services/auth";
 
 export function OTPPage({ email, onSuccess, onBack }: { email: string; onSuccess: () => void; onBack: () => void }) {
-  const [otp, setOtp] = useState(["","","","","",""]);
+  const [otp, setOtp] = useState(["","","","","","","",""]);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [secs, setSecs] = useState(60);
   const [cooldown, setCooldown] = useState(0);
-  const refs = Array.from({ length: 6 }, () => useRef<HTMLInputElement>(null));
+  const refs = Array.from({ length: 8 }, () => useRef<HTMLInputElement>(null));
   useEffect(() => { const t = setInterval(() => setSecs(s => Math.max(s-1, 0)), 1000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -18,24 +18,29 @@ export function OTPPage({ email, onSuccess, onBack }: { email: string; onSuccess
   }, [cooldown]);
 
   function getOtpError(err: unknown): string {
+    if (err instanceof Error) console.error('[OTP Error]', err.message, err);
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("429") || msg.includes("rate") || msg.includes("Too Many Requests") || msg.includes("over_email_send_rate_limit")) {
       return "Terlalu banyak permintaan. Silakan tunggu beberapa saat.";
     }
-    if (msg.includes("otp_expired") || msg.includes("expired")) {
+    if (msg.includes("otp_expired") || msg.includes("Token has expired") || msg.includes("expired")) {
       return "Kode OTP sudah kedaluwarsa. Silakan kirim ulang.";
     }
-    if (msg.includes("otp") || msg.includes("token")) {
+    if (msg.includes("otp") || msg.includes("token") || msg.includes("invalid")) {
       return "Kode OTP yang Anda masukkan salah.";
     }
-    return msg || "Terjadi kesalahan. Silakan coba lagi.";
+    return msg || "Kode OTP yang Anda masukkan salah.";
   }
 
   async function handleVerify() {
-    if (otp.join("").length < 6) { toast.error("Masukkan 6 digit kode OTP"); return; }
+    if (otp.join("").length < 8) { toast.error("Masukkan 8 digit kode OTP"); return; }
     setLoading(true);
     try {
-      await verifyOtp(email, otp.join(""));
+      const result = await verifyOtp(email, otp.join(""));
+      if (!result?.user) {
+        toast.error("Kode OTP yang Anda masukkan salah.");
+        return;
+      }
       toast.success("Verifikasi berhasil!");
       onSuccess();
     } catch (err: unknown) {
@@ -63,24 +68,24 @@ export function OTPPage({ email, onSuccess, onBack }: { email: string; onSuccess
 
   function inp(i: number, val: string) {
     const d = val.replace(/\D/,"").slice(-1); const n = [...otp]; n[i] = d; setOtp(n);
-    if (d && i < 5) refs[i+1].current?.focus();
+    if (d && i < 7) refs[i+1].current?.focus();
   }
   function kd(i: number, e: React.KeyboardEvent) { if (e.key === "Backspace" && !otp[i] && i > 0) refs[i-1].current?.focus(); }
   function paste(e: React.ClipboardEvent) {
-    const p = e.clipboardData.getData("text").replace(/\D/g,"").slice(0,6);
+    const p = e.clipboardData.getData("text").replace(/\D/g,"").slice(0,8);
     const n = [...otp]; p.split("").forEach((c, i) => { n[i] = c; }); setOtp(n);
-    refs[Math.min(p.length,5)].current?.focus(); e.preventDefault();
+    refs[Math.min(p.length,7)].current?.focus(); e.preventDefault();
   }
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
-      <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm text-center">
+      <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm text-center">
         <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center mb-4 mx-auto"><Mail size={20} className="text-emerald-600" /></div>
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-1">Masukkan Kode OTP</h2>
-        <p className="text-sm text-slate-400 mb-6">Kode 6 digit telah dikirim ke email Anda</p>
+        <p className="text-sm text-slate-400 mb-6">Kode 8 digit telah dikirim ke email Anda</p>
         <div className="flex justify-center gap-2 mb-6" onPaste={paste}>
           {otp.map((d, i) => (
             <input key={i} ref={refs[i]} value={d} onChange={e => inp(i, e.target.value)} onKeyDown={e => kd(i, e)} maxLength={1}
-              className="w-11 h-12 text-center text-xl font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white rounded-xl outline-none focus:border-blue-500 transition" />
+              className="w-10 h-12 text-center text-xl font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white rounded-xl outline-none focus:border-blue-500 transition" />
           ))}
         </div>
         <button onClick={handleVerify} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 active:scale-95 rounded-xl transition-all disabled:opacity-70 mb-3">

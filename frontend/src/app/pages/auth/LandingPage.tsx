@@ -1,9 +1,9 @@
-import { BarChart3, Play, ArrowRight, Building2, BarChart2, Zap, Shield, Activity, PieChart } from "lucide-react";
+import { BarChart3, ArrowRight, Building2, BarChart2, Zap, Shield, Activity, PieChart } from "lucide-react";
 
 const features = [
   { icon: Building2, title: "Multi-Cabang",        desc: "Pantau stok seluruh cabang dari satu dashboard terpusat secara real-time." },
-  { icon: BarChart2, title: "Demand Forecasting",  desc: "Prediksi kebutuhan sparepart menggunakan model SMA berbasis histori penjualan." },
-  { icon: Zap,       title: "Restock Otomatis",    desc: "Rekomendasi restock cerdas berdasarkan safety stock dan reorder point." },
+  { icon: BarChart2, title: "Demand Forecasting",  desc: "Prediksi kebutuhan sparepart menggunakan model XGBoost berbasis histori penjualan." },
+  { icon: Zap,       title: "Restok Otomatis",     desc: "Rekomendasi restock cerdas berdasarkan safety stock dan reorder point." },
   { icon: Shield,    title: "Role-Based Access",   desc: "Kontrol akses berbasis peran untuk Admin Pusat dan Admin Cabang." },
   { icon: Activity,  title: "Real-time Monitoring",desc: "Lacak pergerakan stok masuk, keluar, dan transfer antar cabang secara langsung." },
   { icon: PieChart,  title: "Laporan Mendalam",    desc: "Ekspor laporan stok, penjualan, dan forecasting dalam format PDF maupun Excel." },
@@ -12,19 +12,21 @@ const features = [
 export function LandingPage({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="min-h-screen text-white overflow-x-hidden" style={{ background: "#080f23" }}>
+      <style>{`html { scroll-behavior: smooth; }`}</style>
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5" style={{ background: "rgba(8,15,35,0.92)", backdropFilter: "blur(12px)" }}>
         <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center"><BarChart3 size={15} className="text-white" /></div><span className="font-bold text-white">SpareTrack</span></div>
           <div className="hidden md:flex items-center gap-6 text-sm text-slate-400">
-            {["Fitur","Harga","Tentang","Kontak"].map(l => <a key={l} href="#" className="hover:text-white transition">{l}</a>)}
+            <a href="#beranda" className="hover:text-white transition">Beranda</a>
+            <a href="#fitur" className="hover:text-white transition">Fitur</a>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={onLogin} className="px-4 py-1.5 text-sm text-slate-300 hover:text-white transition">Masuk</button>
-            <button onClick={onLogin} className="px-4 py-1.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition active:scale-95">Mulai Gratis</button>
+            <button onClick={onLogin} className="px-4 py-1.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition active:scale-95">Daftar</button>
           </div>
         </div>
       </nav>
-      <section className="pt-32 pb-20 px-6">
+      <section id="beranda" className="pt-32 pb-20 px-6 scroll-mt-16">
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full text-xs text-blue-400 border border-blue-500/20" style={{ background: "rgba(59,130,246,0.1)" }}>
             <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />Sistem Manajemen Stok Bengkel Modern
@@ -33,10 +35,9 @@ export function LandingPage({ onLogin }: { onLogin: () => void }) {
             Kendali Penuh Stok<br />
             <span style={{ background: "linear-gradient(135deg,#60a5fa,#34d399)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Sparepart Bengkel</span>
           </h1>
-          <p className="text-lg text-slate-400 max-w-xl mx-auto mb-8 leading-relaxed">Platform manajemen inventori multi-cabang dengan prediksi demand SMA, rekomendasi restock otomatis, dan monitoring stok real-time.</p>
+          <p className="text-lg text-slate-400 max-w-xl mx-auto mb-8 leading-relaxed">Platform manajemen inventori multi-cabang dengan prediksi demand XGBoost, rekomendasi restock otomatis, dan monitoring stok real-time.</p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            <button onClick={onLogin} className="flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-lg shadow-blue-900/40 active:scale-95"><Play size={14} />Mulai Sekarang</button>
-            <button onClick={onLogin} className="flex items-center gap-2 px-6 py-3 text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all">Lihat Demo<ArrowRight size={14} /></button>
+            <button onClick={onLogin} className="flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-lg shadow-blue-900/40 active:scale-95">Daftar Sekarang<ArrowRight size={14} /></button>
           </div>
         </div>
         <div className="max-w-5xl mx-auto mt-16 relative">
@@ -47,7 +48,7 @@ export function LandingPage({ onLogin }: { onLogin: () => void }) {
               <span className="ml-3 px-3 py-0.5 text-xs text-slate-400 bg-white/5 rounded" style={{ fontFamily: "'JetBrains Mono', monospace" }}>app.sparetrack.id/dashboard</span>
             </div>
             <div className="p-5 grid grid-cols-4 gap-3">
-              {[["485","Total Stok"],["3","Item Kritis"],["Rp 183M","Nilai Inv."],["91.2%","Akurasi"]].map(([v, l]) => (
+              {[["485","Total Stok"],["3","Item Kritis"],["Rp 183M","Nilai Inv."],["90%","Akurasi XGBoost"]].map(([v, l]) => (
                 <div key={l} className="bg-white/5 rounded-xl p-3 border border-white/5">
                   <div className="text-lg font-bold text-white mb-0.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{v}</div>
                   <div className="text-xs text-slate-500">{l}</div>
@@ -65,7 +66,7 @@ export function LandingPage({ onLogin }: { onLogin: () => void }) {
           ))}
         </div>
       </section>
-      <section className="py-20 px-6">
+      <section id="fitur" className="py-20 px-6 scroll-mt-16">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12"><h2 className="text-3xl font-bold mb-3" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Fitur Lengkap untuk Bengkel Modern</h2><p className="text-slate-400">Semua yang Anda butuhkan untuk mengelola stok sparepart secara efisien</p></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -83,10 +84,10 @@ export function LandingPage({ onLogin }: { onLogin: () => void }) {
         <div className="max-w-2xl mx-auto text-center p-10 rounded-3xl border border-blue-500/20" style={{ background: "linear-gradient(135deg,rgba(29,78,216,0.15),rgba(8,145,178,0.1))" }}>
           <h2 className="text-3xl font-bold mb-3" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Siap Mengoptimalkan Stok Bengkel?</h2>
           <p className="text-slate-400 mb-6">Bergabung dengan bengkel yang sudah menggunakan SpareTrack</p>
-          <button onClick={onLogin} className="px-8 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all active:scale-95">Mulai Gratis Sekarang</button>
+          <button onClick={onLogin} className="px-8 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all active:scale-95">Daftar Sekarang</button>
         </div>
       </section>
-      <footer className="py-8 px-6 border-t border-white/5 text-center text-xs text-slate-600">© 2025 SpareTrack. All rights reserved.</footer>
+      <footer className="py-8 px-6 border-t border-white/5 text-center text-xs text-slate-600">© 2026 SpareTrack. All rights reserved.</footer>
     </div>
   );
 }

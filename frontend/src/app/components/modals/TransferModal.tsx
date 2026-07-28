@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Activity, Info, Loader2 } from "lucide-react";
+import { Activity, Info, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "../shared/Modal";
 import { FormField } from "../shared/FormField";
@@ -9,7 +9,7 @@ import { create as createTransaction } from "../../services/transactions";
 import { inputCls } from "../../config";
 import type { SparepartDetail } from "../../services/inventory";
 
-export function TransferModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function TransferModal({ open, onClose, userProfile, currentRole }: { open: boolean; onClose: () => void; userProfile?: { role: string; branch: string } | null; currentRole?: string }) {
   const [form, setForm] = useState({ sparepart_id: "", dari_id: "", ke_id: "", jumlah: "", catatan: "" });
   const [spareparts, setSpareparts] = useState<Array<{ id: string; name: string }>>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
@@ -17,14 +17,22 @@ export function TransferModal({ open, onClose }: { open: boolean; onClose: () =>
   const [submitting, setSubmitting] = useState(false);
   const [detail, setDetail] = useState<SparepartDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const isBranchAdmin = currentRole === "branch_admin";
 
   useEffect(() => {
     if (!open) return;
+    setForm({ sparepart_id: "", dari_id: "", ke_id: "", jumlah: "", catatan: "" });
     setDetail(null);
     setLoading(true);
     Promise.all([
       fetchInventory({ limit: 200 }).then(r => setSpareparts((r.data || []).map(s => ({ id: s.id, name: s.name })))),
-      fetchBranches().then(setBranches),
+      fetchBranches().then(b => {
+        setBranches(b);
+        if (isBranchAdmin && userProfile?.branch) {
+          const match = b.find(br => br.name === userProfile.branch || br.id === userProfile.branch);
+          if (match) setForm(f => ({ ...f, dari_id: match.id }));
+        }
+      }),
     ]).catch(() => toast.error("Gagal memuat data"))
       .finally(() => setLoading(false));
   }, [open]);
@@ -69,7 +77,14 @@ export function TransferModal({ open, onClose }: { open: boolean; onClose: () =>
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Dari" required>
             {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
-              : <select value={form.dari_id} onChange={set("dari_id")} className={inputCls}><option value="">Asal</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>}
+              : isBranchAdmin ? (
+                <div className="px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                  <Lock size={12} className="text-slate-400" />
+                  {branches.find(b => b.id === form.dari_id)?.name || "Memuat..."}
+                </div>
+              ) : (
+                <select value={form.dari_id} onChange={set("dari_id")} className={inputCls}><option value="">Asal</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+              )}
           </FormField>
           <FormField label="Ke" required>
             {loading ? <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={12} className="animate-spin" />Memuat...</div>
