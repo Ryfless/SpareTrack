@@ -30,13 +30,7 @@ async function resolveRole(userId) {
 
 function authorize(...roles) {
   return async (req, res, next) => {
-    let userRole = req.user?.app_metadata?.role
-      || req.user?.user_metadata?.role
-      || 'branch_admin';
-
-    if (roles.length > 0 && !roles.includes(userRole)) {
-      userRole = await resolveRole(req.user.id);
-    }
+    const userRole = await resolveRole(req.user.id);
 
     if (roles.length > 0 && !roles.includes(userRole)) {
       return error(res, 'Forbidden: insufficient role', null, 403);

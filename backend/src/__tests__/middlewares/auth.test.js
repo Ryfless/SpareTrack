@@ -71,9 +71,16 @@ describe('authenticate', () => {
 
 describe('authorize', () => {
   it('calls next when user has matching role', async () => {
-    const req = { user: { id: 'u-1', app_metadata: { role: 'super_admin' } }, path: '/test' };
+    const req = { user: { id: 'u-1' }, path: '/test' };
     const res = mockRes();
     const next = jest.fn();
+
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: { role: 'super_admin' }, error: null }),
+    };
+    supabaseAdmin.from.mockReturnValue(chain);
 
     const mw = authorize('super_admin', 'admin');
     await mw(req, res, next);
