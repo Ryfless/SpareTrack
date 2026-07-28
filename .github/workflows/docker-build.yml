@@ -48,7 +48,11 @@ jobs:
             ghcr.io/ryfless/sparetrack-inventory-ml:${{ github.event.workflow_run.head_sha }}
 
       - name: Trigger Render Deploy — Backend
-        run: curl -f -X POST ${{ vars.RENDER_DEPLOY_HOOK_BACKEND }}
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+        run: curl -f -X POST "$RENDER_DEPLOY_HOOK"
 
       - name: Trigger Render Deploy — Inventory ML
-        run: curl -f -X POST ${{ vars.RENDER_DEPLOY_HOOK_INVENTORY_ML }}
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_INVENTORY_ML }}
+        run: curl -f -X POST "$RENDER_DEPLOY_HOOK"
