@@ -12,7 +12,13 @@ const app = express();
 
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors({ origin: config.frontendUrl, credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || config.allowedOrigins.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  credentials: true,
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 
