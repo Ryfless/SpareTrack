@@ -125,6 +125,8 @@ def build_prediction_features(
     spareparts: pd.DataFrame,
     monthly_history: pd.DataFrame,
 ) -> pd.DataFrame:
+    if monthly_history.empty:
+        return pd.DataFrame()
     rows = []
     hist = monthly_history[
         (monthly_history["sparepart_id"] == sparepart_id) &
