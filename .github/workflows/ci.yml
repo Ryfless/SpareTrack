@@ -57,7 +57,7 @@ jobs:
           VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:3001' }}
 
   inventory-ml:
-    name: Inventory ML (Python)
+    name: Inventory ML (Pytest + Flake8)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -71,14 +71,13 @@ jobs:
           cache: pip
           cache-dependency-path: inventory_ml/requirements.txt
 
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt pytest
+
+      - name: Test with pytest
+        run: python -m pytest tests/ -v --tb=short
 
       - name: Lint with flake8
         run: |
           pip install flake8
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        continue-on-error: true
-
-      - name: Check syntax
-        run: python -m py_compile main.py config.py api.py
         continue-on-error: true
