@@ -23,7 +23,16 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - run: npm ci
-      - run: npm test
+      - name: Test
+        run: npm test 2>&1 | tee jest-output.txt; exit ${PIPESTATUS[0]}
+
+      - name: Jest Summary
+        if: always()
+        run: |
+          {
+            echo "## Backend (Jest)"
+            tail -6 jest-output.txt | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   frontend:
     name: Frontend (Vite Build + Vitest)
@@ -74,7 +83,15 @@ jobs:
       - run: pip install -r requirements.txt pytest
 
       - name: Test with pytest
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short 2>&1 | tee pytest-output.txt; exit ${PIPESTATUS[0]}
+
+      - name: Pytest Summary
+        if: always()
+        run: |
+          {
+            echo "## Inventory ML (Pytest)"
+            tail -5 pytest-output.txt | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint with flake8
         run: |
