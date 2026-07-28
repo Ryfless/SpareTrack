@@ -48,21 +48,7 @@ jobs:
             ghcr.io/ryfless/sparetrack-inventory-ml:${{ github.event.workflow_run.head_sha }}
 
       - name: Trigger Render Deploy — Backend
-        env:
-          RENDER_DEPLOY_HOOK_BACKEND: ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
-        run: |
-          if [ -n "$RENDER_DEPLOY_HOOK_BACKEND" ]; then
-            curl -X POST "$RENDER_DEPLOY_HOOK_BACKEND"
-          else
-            echo "WARNING: RENDER_DEPLOY_HOOK_BACKEND not set — skipping"
-          fi
+        run: curl -f -X POST ${{ vars.RENDER_DEPLOY_HOOK_BACKEND }}
 
       - name: Trigger Render Deploy — Inventory ML
-        env:
-          RENDER_DEPLOY_HOOK_INVENTORY_ML: ${{ secrets.RENDER_DEPLOY_HOOK_INVENTORY_ML }}
-        run: |
-          if [ -n "$RENDER_DEPLOY_HOOK_INVENTORY_ML" ]; then
-            curl -X POST "$RENDER_DEPLOY_HOOK_INVENTORY_ML"
-          else
-            echo "WARNING: RENDER_DEPLOY_HOOK_INVENTORY_ML not set — skipping"
-          fi
+        run: curl -f -X POST ${{ vars.RENDER_DEPLOY_HOOK_INVENTORY_ML }}
