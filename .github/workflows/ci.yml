@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  backend:
+    name: Backend (Jest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+
+  frontend:
+    name: Frontend (Vite Build + Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'placeholder-key' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:3001' }}
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'placeholder-key' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://localhost:3001' }}
+
+  inventory-ml:
+    name: Inventory ML (Pytest + Flake8)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inventory_ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: inventory_ml/requirements.txt
+
+      - run: pip install -r requirements.txt pytest
+
+      - name: Test with pytest
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        continue-on-error: true

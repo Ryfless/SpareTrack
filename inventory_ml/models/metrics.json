@@ -1,0 +1,54 @@
+{
+  "metrics": {
+    "mae": 0.0,
+    "rmse": 0.0,
+    "r2": 1.0,
+    "mape": 0.0,
+    "residuals_std": NaN
+  },
+  "feature_importance": [
+    {
+      "feature": "lag_1",
+      "importance": 0.1
+    },
+    {
+      "feature": "lag_2",
+      "importance": 0.1
+    },
+    {
+      "feature": "lag_3",
+      "importance": 0.1
+    },
+    {
+      "feature": "rolling_mean_3",
+      "importance": 0.1
+    },
+    {
+      "feature": "month_sin",
+      "importance": 0.1
+    },
+    {
+      "feature": "month_cos",
+      "importance": 0.1
+    },
+    {
+      "feature": "quarter",
+      "importance": 0.1
+    },
+    {
+      "feature": "price",
+      "importance": 0.1
+    },
+    {
+      "feature": "sparepart_encoded",
+      "importance": 0.1
+    },
+    {
+      "feature": "branch_encoded",
+      "importance": 0.1
+    }
+  ],
+  "n_train": 1,
+  "n_test": 1,
+  "training_date": "2026-07-28T20:13:44.598760"
+}
