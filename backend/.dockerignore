@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+coverage/
+.git/
+.gitignore
+src/__tests__/
+src/migrations/
+jest.config.js
+.DS_Store
