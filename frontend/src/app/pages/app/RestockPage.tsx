@@ -25,7 +25,7 @@ type TabId = 'restock' | 'postponed' | 'po';
 const TABS: { id: TabId; label: string; icon: React.FC<{ size?: number }> }[] = [
   { id: 'restock', label: 'Rekomendasi Restock', icon: Truck },
   { id: 'postponed', label: 'Ditunda', icon: Clock },
-  { id: 'po', label: 'Purchase Orders', icon: ClipboardList },
+  { id: 'po', label: 'Pesanan', icon: ClipboardList },
 ];
 
 interface Props {
@@ -245,11 +245,11 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
       {receiptPO && <ReceiptView po={receiptPO} onClose={() => setReceiptPO(null)} />}
 
       {/* Tab Navigation */}
-      <Card className="p-1 bg-slate-50 dark:bg-slate-800/50 flex gap-1">
+      <Card className="p-1 bg-slate-50 dark:bg-slate-800/50 flex gap-1 overflow-x-auto">
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${tab === t.id ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>
-            <t.icon size={15} />{t.label}
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${tab === t.id ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>
+            <t.icon size={14} className="shrink-0" />{t.label}
           </button>
         ))}
       </Card>
