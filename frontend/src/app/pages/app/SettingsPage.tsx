@@ -438,6 +438,7 @@ export function SettingsPage({ onEditProfile, currentRole }: { onEditProfile: ()
             ) : users.length === 0 ? (
               <div className="text-center py-10 text-sm text-slate-400">Belum ada pengguna</div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">{["Nama","Email","Role","Cabang",""].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500">{h}</th>)}</tr></thead>
                 <tbody>{users.map(u => (
@@ -452,6 +453,7 @@ export function SettingsPage({ onEditProfile, currentRole }: { onEditProfile: ()
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
             )}
             {usersMeta.total_pages > 1 && (
               <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -500,6 +502,7 @@ export function SettingsPage({ onEditProfile, currentRole }: { onEditProfile: ()
             ) : auditLogs.length === 0 ? (
               <div className="text-center py-10 text-sm text-slate-400">Belum ada audit log</div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">{["User","Aksi","Tipe","Waktu","IP"].map(h => <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500">{h}</th>)}</tr></thead>
                 <tbody>{auditLogs.map(log => (
@@ -512,6 +515,7 @@ export function SettingsPage({ onEditProfile, currentRole }: { onEditProfile: ()
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
             )}
             {auditLogsMeta.total_pages > 1 && (
               <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">

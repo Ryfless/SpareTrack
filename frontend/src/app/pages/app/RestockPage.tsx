@@ -263,7 +263,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
                 <Truck size={16} className="text-slate-500" />
                 <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
 <Tooltip text="Refresh"><button onClick={fetchLive} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
   <RefreshCw size={14} className={`text-slate-400 ${liveLoading ? 'animate-spin' : ''}`} />
 </button></Tooltip>
@@ -289,7 +289,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
                 <Truck size={16} className="text-slate-500" />
                 <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <Filter size={12} className="text-slate-400" />
                   <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
@@ -328,7 +328,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
                 <h2 className="font-semibold text-slate-800 dark:text-slate-200">Rekomendasi Restock</h2>
                 <span className="text-xs text-slate-400 font-mono">{liveData.length} item</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1.5">
                   <Filter size={12} className="text-slate-400" />
                   <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
@@ -402,7 +402,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
                     <Clock size={16} className="text-slate-500" />
                     <h2 className="font-semibold text-slate-800 dark:text-slate-200">Restock Ditunda</h2>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-1.5">
                       <Filter size={12} className="text-slate-400" />
                       <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
@@ -443,7 +443,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
                   <h2 className="font-semibold text-slate-800 dark:text-slate-200">Restock Ditunda</h2>
                   <span className="text-xs text-slate-400 font-mono">{filteredPostponed.length} item</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1.5">
                     <Filter size={12} className="text-slate-400" />
                     <select value={urgencyFilter} onChange={e => setUrgencyFilter(e.target.value)} className="text-xs px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500">
@@ -483,7 +483,7 @@ export function RestockPage({ userProfile, scrollTo }: Props) {
               <h2 className="font-semibold text-slate-800 dark:text-slate-200">Purchase Orders</h2>
               {poLoading && <Skeleton className="h-4 w-16 inline-block" />}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <BranchSelect value={poBranchFilter} onChange={setPOBranchFilter} role={userProfile?.role} userBranch={userProfile?.branch} />
               <Tooltip text="Refresh"><button onClick={fetchPOList} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
                 <RefreshCw size={11} className={`text-slate-400 transition-all ${poLoading ? 'animate-spin' : ''}`} />

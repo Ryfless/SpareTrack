@@ -167,10 +167,10 @@ export function DashboardPage({ onNavigate, onAction }: { onNavigate: (p: PageId
           <RefreshCw size={11} className="ml-auto text-slate-400 animate-spin" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {actionAlerts.map(a => (
-            <button key={a.label} onClick={() => onNavigate(a.page, (a as any).filter)} className={`flex items-start gap-3 p-3 rounded-xl border ${a.cls} transition-all hover:shadow-sm active:scale-95 text-left`}>
+            {actionAlerts.map(a => (
+            <button key={a.label} onClick={() => onNavigate(a.page, (a as any).filter)} className={`flex items-start gap-3 p-3 rounded-xl border ${a.cls} transition-all hover:shadow-sm active:scale-95 text-left overflow-hidden`}>
               <a.icon size={16} className="mt-0.5 shrink-0" />
-              <div><div className="text-xl font-bold leading-none mb-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{a.count}</div><div className="text-xs font-semibold">{a.label}</div><div className="text-xs opacity-60 mt-0.5">{a.desc}</div></div>
+              <div className="min-w-0"><div className="text-xl font-bold leading-none mb-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{a.count}</div><div className="text-xs font-semibold truncate">{a.label}</div><div className="text-xs opacity-60 mt-0.5 truncate">{a.desc}</div></div>
             </button>
           ))}
         </div>

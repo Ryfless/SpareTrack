@@ -175,7 +175,7 @@ export function BranchesPage() {
           <Card className="p-5">
             <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Matrix Stok Antar Cabang</div>
             <div className="text-xs text-slate-400 mb-4">Heatmap kondisi stok item utama</div>
-            <div className="max-h-[215px] overflow-y-auto">
+            <div className="max-h-[215px] overflow-auto">
             <table className="w-full text-xs">
               <thead><tr className="border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-white dark:bg-slate-900 z-10"><th className="text-left pb-2 text-slate-400 font-semibold">Sparepart</th>{branches.map(b => <th key={b.id} className="text-center pb-2 text-slate-500 font-semibold">{b.name}</th>)}</tr></thead>
               <tbody>{heatParts.map((part, pi) => <tr key={part} className="border-b border-slate-50 dark:border-slate-800/50"><td className="py-2 text-slate-600 dark:text-slate-400 font-medium">{part}</td>{branches.map((_, ci) => <td key={ci} className="py-2 text-center"><span className={`px-2 py-0.5 rounded font-semibold ${cellCls(heatVals[ci][pi] || 0, heatMax[pi])}`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>{heatVals[ci][pi] || 0}</span></td>)}</tr>)}</tbody>
