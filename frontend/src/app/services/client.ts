@@ -60,6 +60,9 @@ export async function apiRequest<T = unknown>(
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:expired'));
+    }
     const result: ApiResponse<T> = await response.json();
     if (!response.ok) {
       throw new Error(result.message || 'An error occurred');

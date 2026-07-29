@@ -35,6 +35,7 @@ import { api } from "./services/client";
 import type { NotificationItem } from "./services/notifications";
 import type { SparepartDetail } from "./services/inventory";
 import type { AppState, PageId, Role } from "./types";
+import { useIdleTimeout } from "./hooks/useIdleTimeout";
 
 interface UserProfile {
   id: string;
@@ -136,6 +137,15 @@ export default function App() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [appState, userProfile?.id]);
+
+  useEffect(() => {
+    if (appState !== "app") return;
+    function onAuthExpired() { handleLogout(); }
+    window.addEventListener('auth:expired', onAuthExpired);
+    return () => window.removeEventListener('auth:expired', onAuthExpired);
+  }, [appState]);
+
+  useIdleTimeout(appState === "app", handleLogout);
 
   async function fetchProfile() {
     try {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { ArrowDownRight, ArrowUpRight, Activity, ClipboardList, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Activity, ClipboardList, ChevronLeft, ChevronRight, CalendarDays, Frown } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "../../components/shared/Card";
 import { EmptyState } from "../../components/shared/EmptyState";
@@ -95,6 +95,18 @@ export function TransactionsPage({ userProfile, onAction }: Props) {
     setMonthFrom(val);
     setMonthTo(val);
     setPage(1);
+  }
+
+  if (userProfile?.role === 'branch_admin' && !userProfile?.branch) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+          <Frown size={28} className="text-slate-400" />
+        </div>
+        <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Anda belum terdaftar di cabang manapun</h3>
+        <p className="text-sm text-slate-400 max-w-xs">Hubungi super admin untuk menetapkan cabang Anda melalui pengaturan.</p>
+      </div>
+    );
   }
 
   return (
