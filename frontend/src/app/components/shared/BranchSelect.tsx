@@ -18,6 +18,7 @@ export function BranchSelect({ value, onChange, className = "", role, userBranch
   }, []);
 
   const isBranchAdmin = role === "branch_admin";
+  const noBranch = isBranchAdmin && !userBranch;
 
   useEffect(() => {
     if (isBranchAdmin && userBranch) {
@@ -35,17 +36,21 @@ export function BranchSelect({ value, onChange, className = "", role, userBranch
   return (
     <div className={`flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm ${className}`}>
       <Building2 size={12} className="text-blue-600 shrink-0" />
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={isBranchAdmin}
-        className="bg-transparent text-slate-700 dark:text-slate-300 text-sm outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {!isBranchAdmin && <option value="">Semua Cabang</option>}
-        {displayBranches.map(b => (
-          <option key={b.id} value={b.id}>{b.name}</option>
-        ))}
-      </select>
+      {noBranch ? (
+        <span className="text-xs text-slate-400 italic">Belum ada cabang</span>
+      ) : (
+        <select
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          disabled={isBranchAdmin}
+          className="bg-transparent text-slate-700 dark:text-slate-300 text-sm outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {!isBranchAdmin && <option value="">Semua Cabang</option>}
+          {displayBranches.map(b => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
