@@ -200,6 +200,7 @@ export function ReportsPage({ userProfile }: Props) {
             <AlertTriangle size={14} className="text-red-500" />
             <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Item Stok Kritis ({inv.critical_list.length})</span>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b border-slate-100 dark:border-slate-800 text-xs font-semibold text-slate-400">{["Sparepart","Kode","Cabang","Stok"].map(h => <th key={h} className="text-left pb-2">{h}</th>)}</tr></thead>
             <tbody>{[...inv.critical_list].sort((a, b) => a.name.localeCompare(b.name) || a.branch.localeCompare(b.branch)).map((c, i) => (
@@ -211,6 +212,7 @@ export function ReportsPage({ userProfile }: Props) {
               </tr>
             ))}</tbody>
           </table>
+          </div>
         </Card>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
