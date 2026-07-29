@@ -95,6 +95,9 @@ export function LoginPage({ onSuccess, onRegister, onForgot, onBack }: { onSucce
                 <button onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><Eye size={14} /></button>
               </div>
             </FormField>
+            <div className="flex justify-end -mt-2 mb-1">
+              <button onClick={onForgot} className="text-xs text-blue-600 hover:underline font-medium">Lupa password?</button>
+            </div>
             {error && (
               <div className={`p-3 rounded-xl border text-sm flex items-start gap-3 ${
                 error.type === "config"
