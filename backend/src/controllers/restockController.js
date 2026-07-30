@@ -74,6 +74,11 @@ async function resolveBranch(userId) {
   return data?.branch || null;
 }
 
+async function isBranchAdmin(userId) {
+  const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', userId).maybeSingle();
+  return profile?.role === 'branch_admin';
+}
+
 async function branchOwnsPO(userId, poId) {
   const branchName = await resolveBranch(userId);
   if (!branchName) return false;
@@ -85,7 +90,7 @@ async function branchOwnsPO(userId, poId) {
 
 exports.createPurchaseOrder = async (req, res, next) => {
   try {
-    if (req.userRole === 'branch_admin') {
+    if (await isBranchAdmin(req.user.id)) {
       const branchName = await resolveBranch(req.user.id);
       if (!branchName) return error(res, 'Profil cabang tidak ditemukan', null, 403);
       const { data: br } = await supabaseAdmin.from('branches').select('id').eq('name', branchName).maybeSingle();
@@ -115,7 +120,7 @@ exports.purchaseOrderDetail = async (req, res, next) => {
 
 exports.approvePO = async (req, res, next) => {
   try {
-    if (req.userRole === 'branch_admin') {
+    if (await isBranchAdmin(req.user.id)) {
       const allowed = await branchOwnsPO(req.user.id, req.params.id);
       if (!allowed) return error(res, 'Anda hanya dapat mengelola PO cabang sendiri', null, 403);
     }
@@ -129,7 +134,7 @@ exports.approvePO = async (req, res, next) => {
 
 exports.cancelPO = async (req, res, next) => {
   try {
-    if (req.userRole === 'branch_admin') {
+    if (await isBranchAdmin(req.user.id)) {
       const allowed = await branchOwnsPO(req.user.id, req.params.id);
       if (!allowed) return error(res, 'Anda hanya dapat mengelola PO cabang sendiri', null, 403);
     }
@@ -143,7 +148,7 @@ exports.cancelPO = async (req, res, next) => {
 
 exports.receivePO = async (req, res, next) => {
   try {
-    if (req.userRole === 'branch_admin') {
+    if (await isBranchAdmin(req.user.id)) {
       const allowed = await branchOwnsPO(req.user.id, req.params.id);
       if (!allowed) return error(res, 'Anda hanya dapat mengelola PO cabang sendiri', null, 403);
     }
