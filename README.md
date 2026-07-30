@@ -32,7 +32,7 @@
 - [8. Training Model Machine Learning](#8-training-model-machine-learning)
 - [9. Sistem Prediksi (Forecasting)](#9-sistem-prediksi-forecasting)
 - [10. Sistem Restock & Purchase Order](#10-sistem-restock--purchase-order)
-- [11. Pengembangan dengan Metode Prototyping](#11-pengembangan-dengan-metode-prototyping)
+- [11. Pengembangan dengan SDLC Agile](#11-pengembangan-dengan-sdlc-agile)
 - [12. Skenario Testing](#12-skenario-testing)
 - [13. CI/CD Pipeline](#13-cicd-pipeline)
 - [14. Deployment & Cara Mengakses](#14-deployment--cara-mengakses)
@@ -1036,54 +1036,67 @@ Untuk setiap (sparepart × branch):
 
 ---
 
-## 11. Pengembangan dengan Metode Prototyping
+## 11. Pengembangan dengan SDLC Agile
 
-### Fase 1: Prototipe Awal (Core CRUD)
+Proyek ini dikembangkan menggunakan **SDLC Agile** dengan pendekatan **iteratif dan inkremental**. Setiap sprint menghasilkan increment fitur yang siap pakai. Berikut segmen pengembangan yang dikerjakan secara berurutan:
 
-| Iterasi | Fokus | Output |
-|---------|-------|--------|
-| 1.1 | Database Schema | SQL migrations + Supabase setup |
-| 1.2 | Backend Auth + Profile | Register, Login, JWT, Profile API |
-| 1.3 | Manajemen Sparepart | CRUD spareparts + branch_stocks |
-| 1.4 | Frontend Landing + Login | Landing page, Login, Register UI |
+---
 
-### Fase 2: Prototipe Fungsional (Transaksi & Inventori)
+#### Segmen A: Core CRUD — Sprint 1-2
 
 | Iterasi | Fokus | Output |
 |---------|-------|--------|
-| 2.1 | Stock Movements | In/Out/Transfer/Adjustment API + Trigger DB |
-| 2.2 | Dashboard | KPI cards, grafik, recent activity |
-| 2.3 | Branches Page | Stok per cabang, top selling, sales trend |
-| 2.4 | Frontend Improvements | Sidebar, navigation, filter, search |
+| A.1 | Database Schema | SQL migrations + Supabase setup |
+| A.2 | Backend Auth + Profile | Register, Login, JWT, Profile API |
+| A.3 | Manajemen Sparepart | CRUD spareparts + branch_stocks |
+| A.4 | Frontend Landing + Login | Landing page, Login, Register UI |
 
-### Fase 3: Prototipe Lanjutan (Restock & Purchase Order)
+---
 
-| Iterasi | Fokus | Output |
-|---------|-------|--------|
-| 3.1 | Generate Rekomendasi | Rule-based restock + scheduler |
-| 3.2 | Purchase Order | CRUD PO + approve/receive workflow |
-| 3.3 | Notifications | Notifikasi realtime + unread count |
-| 3.4 | Frontend Restock Page | Recommendations + PO tabs |
-
-### Fase 4: Machine Learning Integration
+#### Segmen B: Transaksi & Inventori — Sprint 3-4
 
 | Iterasi | Fokus | Output |
 |---------|-------|--------|
-| 4.1 | Data Pipeline | Fetch data dari Supabase → feature engineering |
-| 4.2 | XGBoost Training | Train model + save metrics |
-| 4.3 | Prediction API | `/api/predict` + save forecast_series |
-| 4.4 | Live Recommendations | ML-based recommendations di frontend |
+| B.1 | Stock Movements | In/Out/Transfer/Adjustment API + Trigger DB otomatis |
+| B.2 | Dashboard | KPI cards, grafik demand, recent activity |
+| B.3 | Branches Page | Stok per cabang, top selling, sales trend |
+| B.4 | Frontend Improvements | Sidebar, navigasi, filter, search, command palette |
 
-### Fase 5: Enhancement & Deployment
+---
+
+#### Segmen C: Restock & Purchase Order — Sprint 5-7
 
 | Iterasi | Fokus | Output |
 |---------|-------|--------|
-| 5.1 | Reports | PDF + Excel export |
-| 5.2 | Settings & Admin | Users CRUD, audit log, settings |
-| 5.3 | Security | Role-based access, idle timeout, 401 handler |
-| 5.4 | CI/CD | GitHub Actions, Docker, Vercel, Render |
-| 5.5 | Responsive UI | Mobile-friendly pages, dark mode |
-| 5.6 | Polish | Command palette, detail drawer, OTP, forgot password |
+| C.1 | Generate Rekomendasi | Rule-based restock + scheduler node-cron |
+| C.2 | Purchase Order | CRUD PO + approve/receive/cancel workflow |
+| C.3 | Notifications | Notifikasi realtime via Supabase Realtime + unread count |
+| C.4 | Frontend Restock Page | Tab Rekomendasi + tab Pesanan PO |
+
+---
+
+#### Segmen D: Machine Learning Integration — Sprint 8-9
+
+| Iterasi | Fokus | Output |
+|---------|-------|--------|
+| D.1 | Data Pipeline | Fetch data dari Supabase → feature engineering (lag, seasonal, encoding) |
+| D.2 | XGBoost Training | Train model + save metrics (MAE, RMSE, R², MAPE) |
+| D.3 | Prediction API | `/api/predict` → save forecast_series ke Supabase |
+| D.4 | Live Recommendations | ML-based recommendations via `/restock/live-recommendations` |
+| D.5 | Auto-Scheduler | APScheduler tiap 1 jam → auto predict jika ada movement baru |
+
+---
+
+#### Segmen E: Enhancement & Deployment — Sprint 10-12
+
+| Iterasi | Fokus | Output |
+|---------|-------|--------|
+| E.1 | Reports | Export PDF + Excel (summary, transaksi, item kritis) |
+| E.2 | Settings & Admin | Users CRUD, audit log, settings global |
+| E.3 | Security | Role-based access control, idle timeout, 401 handler |
+| E.4 | CI/CD Pipeline | GitHub Actions, Docker, GHCR, Render |
+| E.5 | Frontend Polish | Responsive mobile UI, dark mode, OTP lupa password |
+| E.6 | Deployment Publik | Vercel + Render + cron-job.org keep-alive |
 
 ---
 
