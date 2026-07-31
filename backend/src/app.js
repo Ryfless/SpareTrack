@@ -23,7 +23,7 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', commit: process.env.GIT_SHA || 'local', timestamp: new Date().toISOString() });
 });
 
 app.use('/api/v1', apiRoutes);

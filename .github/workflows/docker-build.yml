@@ -1,16 +1,17 @@
 name: Docker Build
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
+  push:
     branches:
       - main
+    paths:
+      - 'backend/**'
+      - 'inventory_ml/**'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:
 
 jobs:
   docker:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -20,24 +21,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check changed paths
         id: changed
+        shell: bash
         run: |
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            CHANGED=$(git diff --name-only HEAD~1 HEAD)
-          else
-            echo "build_backend=true" >> $GITHUB_OUTPUT
-            echo "build_ml=true" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "build_backend=true" >> "$GITHUB_OUTPUT"
+            echo "build_ml=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          BASE=$(git merge-base HEAD~1 HEAD 2>/dev/null || echo HEAD~1)
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+
           if echo "$CHANGED" | grep -q '^backend/'; then
-            echo "build_backend=true" >> $GITHUB_OUTPUT
+            echo "build_backend=true" >> "$GITHUB_OUTPUT"
           fi
           if echo "$CHANGED" | grep -q '^inventory_ml/'; then
-            echo "build_ml=true" >> $GITHUB_OUTPUT
+            echo "build_ml=true" >> "$GITHUB_OUTPUT"
           fi
           {
             echo "### Changes detected"
@@ -59,9 +62,11 @@ jobs:
         with:
           context: backend
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/ryfless/sparetrack-backend:latest
-            ghcr.io/ryfless/sparetrack-backend:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/ryfless/sparetrack-backend:${{ github.sha }}
 
       - name: Build & push inventory_ml
         if: steps.changed.outputs.build_ml == 'true'
@@ -71,7 +76,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/ryfless/sparetrack-inventory-ml:latest
-            ghcr.io/ryfless/sparetrack-inventory-ml:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/ryfless/sparetrack-inventory-ml:${{ github.sha }}
 
       - name: Trigger Render Deploy — Backend
         if: steps.changed.outputs.build_backend == 'true'
